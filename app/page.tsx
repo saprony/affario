@@ -1,13 +1,40 @@
+"use client";
+
+import { useState } from "react";
+
+const products = [
+  {
+    name: "iPhone 17 Pro 128GB Nero",
+    price: "€ 1.099",
+    score: 72,
+    verdict: "Buon prezzo",
+    color: "#22c55e",
+  },
+  {
+    name: "iPhone 17 Pro 256GB Nero",
+    price: "€ 1.149",
+    score: 84,
+    verdict: "Ottimo momento per acquistare",
+    color: "#166534",
+  },
+  {
+    name: "iPhone 17 Pro 512GB Titanio",
+    price: "€ 1.349",
+    score: 48,
+    verdict: "Prezzo nella media",
+    color: "#eab308",
+  },
+];
+
 export default function Home() {
+  const [query, setQuery] = useState("");
+  const [searched, setSearched] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+
   return (
     <main style={styles.page}>
       <header style={styles.header}>
         <div style={styles.logo}>AFFARIO</div>
-        <nav style={styles.nav}>
-          <a style={styles.navLink}>Come funziona</a>
-          <a style={styles.navLink}>Alert</a>
-          <a style={styles.navLink}>Contatti</a>
-        </nav>
       </header>
 
       <section style={styles.hero}>
@@ -19,61 +46,95 @@ export default function Home() {
           <span style={styles.green}>si aspettano!</span>
         </h1>
 
-        <p style={styles.subtitle}>
-          Scegli il momento giusto per comprare.
-        </p>
+        <p style={styles.subtitle}>Scegli il momento giusto per comprare.</p>
 
         <div style={styles.searchBox}>
           <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             type="text"
             placeholder="Che prodotto stai pensando di comprare?"
             style={styles.input}
           />
-          <button style={styles.button}>
+          <button
+            style={styles.button}
+            onClick={() => {
+              setSearched(true);
+              setSelectedProduct(null);
+            }}
+          >
             Analizza il prezzo
           </button>
         </div>
-
-        <p style={styles.smallText}>
-          Affario ti aiuta a capire se il prezzo di oggi è davvero conveniente.
-        </p>
       </section>
 
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Come funziona</h2>
+      {searched && !selectedProduct && (
+        <section style={styles.results}>
+          <h2>Abbiamo trovato prodotti compatibili</h2>
+          <p style={styles.muted}>
+            Hai cercato: <strong>{query || "iPhone 17 Pro"}</strong>
+          </p>
 
-        <div style={styles.cards}>
-          <div style={styles.card}>
-            <div style={styles.cardIcon}>🔎</div>
-            <h3>Cerca un prodotto</h3>
-            <p>Inserisci il nome del prodotto che stai pensando di acquistare.</p>
+          <div style={styles.productList}>
+            {products.map((product) => (
+              <button
+                key={product.name}
+                style={styles.productCard}
+                onClick={() => setSelectedProduct(product)}
+              >
+                <strong>{product.name}</strong>
+                <span>{product.price}</span>
+                <small>Seleziona per analizzare</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {selectedProduct && (
+        <section style={styles.analysis}>
+          <h2>{selectedProduct.name}</h2>
+
+          <p style={styles.price}>Prezzo attuale: {selectedProduct.price}</p>
+
+          <div
+            style={{
+              ...styles.scoreBox,
+              background: selectedProduct.color,
+            }}
+          >
+            Affario Score: {selectedProduct.score}/100
           </div>
 
-          <div style={styles.card}>
-            <div style={styles.cardIcon}>📊</div>
-            <h3>Analizza il prezzo</h3>
-            <p>Affario confronta il prezzo attuale con lo storico e individua il momento migliore.</p>
+          <h3>{selectedProduct.verdict}</h3>
+
+          <p style={styles.analysisText}>
+            Il prezzo attuale viene confrontato con l&apos;andamento degli ultimi
+            90 giorni. Più il prezzo è vicino ai minimi recenti, più alto sarà
+            l&apos;Affario Score.
+          </p>
+
+          <ul style={styles.list}>
+            <li>Prezzo medio ultimi 90 giorni: € 1.240</li>
+            <li>Prezzo minimo ultimi 90 giorni: € 1.089</li>
+            <li>Prezzo attuale inferiore alla media recente</li>
+          </ul>
+
+          <div style={styles.ctaContainer}>
+            <button style={styles.amazonButton}>
+              🛒 Compra ora su Amazon
+            </button>
+
+            <p style={styles.amazonText}>
+              Verrai reindirizzato ad Amazon per completare l&apos;acquisto.
+            </p>
+
+            <button style={styles.alertButton}>
+              🔔 Avvisami se scende ancora
+            </button>
           </div>
-
-          <div style={styles.card}>
-            <div style={styles.cardIcon}>⏰</div>
-            <h3>Decidi quando comprare</h3>
-            <p>Ricevi una valutazione semplice e, in futuro, potrai attivare alert intelligenti.</p>
-          </div>
-        </div>
-      </section>
-
-      <section style={styles.valueSection}>
-        <h2 style={styles.sectionTitle}>Non è solo una ricerca prezzo.</h2>
-        <p style={styles.valueText}>
-          I comparatori ti dicono dove costa meno oggi. Affario ti aiuta a capire
-          se oggi è davvero il momento giusto per acquistare.
-        </p>
-      </section>
-
-      <footer style={styles.footer}>
-        <p>© 2026 Affario.it — Progetto in fase di sviluppo</p>
-      </footer>
+        </section>
+      )}
     </main>
   );
 }
@@ -84,43 +145,24 @@ const styles = {
     background: "#f8fafc",
     color: "#111827",
     fontFamily: "Arial, sans-serif",
+    paddingBottom: "60px",
   },
-
   header: {
     maxWidth: "1100px",
     margin: "0 auto",
     padding: "24px 20px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
   },
-
   logo: {
     fontSize: "24px",
     fontWeight: "900",
-    letterSpacing: "1px",
     color: "#16a34a",
   },
-
-  nav: {
-    display: "flex",
-    gap: "20px",
-    fontSize: "14px",
-  },
-
-  navLink: {
-    color: "#374151",
-    textDecoration: "none",
-    cursor: "pointer",
-  },
-
   hero: {
     maxWidth: "900px",
     margin: "0 auto",
-    padding: "70px 20px 90px",
+    padding: "60px 20px",
     textAlign: "center" as const,
   },
-
   badge: {
     display: "inline-block",
     marginBottom: "24px",
@@ -131,27 +173,22 @@ const styles = {
     fontSize: "14px",
     fontWeight: "700",
   },
-
   title: {
-    margin: "0",
-    fontSize: "58px",
+    margin: 0,
+    fontSize: "54px",
     lineHeight: "1.05",
     fontWeight: "900",
-    letterSpacing: "-2px",
   },
-
   green: {
     color: "#16a34a",
   },
-
   subtitle: {
     marginTop: "22px",
     fontSize: "24px",
     color: "#4b5563",
   },
-
   searchBox: {
-    margin: "40px auto 18px",
+    margin: "36px auto 0",
     maxWidth: "720px",
     display: "flex",
     gap: "12px",
@@ -160,16 +197,13 @@ const styles = {
     borderRadius: "18px",
     boxShadow: "0 15px 40px rgba(0,0,0,0.10)",
   },
-
   input: {
     flex: 1,
     border: "1px solid #e5e7eb",
     borderRadius: "12px",
     padding: "16px",
     fontSize: "16px",
-    outline: "none",
   },
-
   button: {
     border: "none",
     borderRadius: "12px",
@@ -180,60 +214,86 @@ const styles = {
     padding: "0 24px",
     cursor: "pointer",
   },
-
-  smallText: {
-    color: "#6b7280",
-    fontSize: "15px",
-  },
-
-  section: {
-    maxWidth: "1100px",
-    margin: "0 auto",
-    padding: "50px 20px",
-  },
-
-  sectionTitle: {
-    textAlign: "center" as const,
-    fontSize: "34px",
-    marginBottom: "34px",
-    letterSpacing: "-1px",
-  },
-
-  cards: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "22px",
-  },
-
-  card: {
-    background: "white",
-    padding: "28px",
-    borderRadius: "22px",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-  },
-
-  cardIcon: {
-    fontSize: "34px",
-    marginBottom: "12px",
-  },
-
-  valueSection: {
+  results: {
     maxWidth: "900px",
-    margin: "30px auto 0",
-    padding: "60px 20px",
-    textAlign: "center" as const,
+    margin: "0 auto",
+    padding: "20px",
   },
-
-  valueText: {
-    fontSize: "21px",
-    lineHeight: "1.6",
+  muted: {
+    color: "#6b7280",
+  },
+  productList: {
+    display: "grid",
+    gap: "16px",
+    marginTop: "20px",
+  },
+  productCard: {
+    background: "white",
+    border: "1px solid #e5e7eb",
+    borderRadius: "18px",
+    padding: "20px",
+    textAlign: "left" as const,
+    display: "grid",
+    gap: "8px",
+    cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
+  },
+  analysis: {
+    maxWidth: "760px",
+    margin: "30px auto",
+    background: "white",
+    padding: "30px",
+    borderRadius: "24px",
+    boxShadow: "0 15px 40px rgba(0,0,0,0.10)",
+  },
+  price: {
+    fontSize: "22px",
+    fontWeight: "700",
+  },
+  scoreBox: {
+    display: "inline-block",
+    padding: "12px 18px",
+    borderRadius: "14px",
+    color: "white",
+    fontWeight: "800",
+    margin: "16px 0",
+  },
+  analysisText: {
     color: "#4b5563",
+    lineHeight: "1.6",
   },
-
-  footer: {
-    padding: "30px 20px",
+  list: {
+    lineHeight: "1.8",
+  },
+  ctaContainer: {
+    marginTop: "24px",
+  },
+  amazonButton: {
+    width: "100%",
+    border: "none",
+    borderRadius: "14px",
+    background: "#16a34a",
+    color: "white",
+    padding: "16px",
+    fontWeight: "800",
+    fontSize: "16px",
+    cursor: "pointer",
+  },
+  amazonText: {
     textAlign: "center" as const,
     color: "#6b7280",
-    fontSize: "14px",
+    fontSize: "13px",
+    marginTop: "10px",
+    marginBottom: "20px",
+  },
+  alertButton: {
+    width: "100%",
+    border: "none",
+    borderRadius: "14px",
+    background: "#111827",
+    color: "white",
+    padding: "14px 20px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
 };
