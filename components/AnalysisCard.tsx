@@ -127,14 +127,20 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
 
       <div className="mt-8">
         {isAmazonLinkAvailable ? (
-          <a
-            href={amazonUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full rounded-xl bg-green-600 p-4 text-center text-lg font-extrabold text-white"
-          >
-            🛒 Compra ora su Amazon
-          </a>
+          <>
+            <a
+              href={amazonUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full rounded-xl bg-green-600 p-4 text-center text-lg font-extrabold text-white"
+            >
+              🛒 Compra ora su Amazon
+            </a>
+            <p className="mt-3 text-center text-sm leading-relaxed text-gray-600">
+              Link affiliato Amazon — AFFARIO può ricevere una commissione dagli
+              acquisti idonei.
+            </p>
+          </>
         ) : (
           <button
             type="button"
@@ -145,7 +151,7 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
           </button>
         )}
 
-        <p className="mb-5 mt-3 text-center text-sm text-gray-500">
+        <p className="mb-5 mt-2 text-center text-sm text-gray-500">
           {isAmazonLinkAvailable
             ? "Verrai reindirizzato ad Amazon per completare l'acquisto."
             : "Il link per questo prodotto non è ancora disponibile."}
