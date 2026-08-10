@@ -1,5 +1,10 @@
+"use client";
+
+import { FormEvent, useState } from "react";
 import { Product } from "@/types/product";
 import { calculatePotentialSavings } from "@/lib/calculatePotentialSavings";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type AnalysisCardProps = {
   product: Product;
@@ -60,6 +65,13 @@ function getSavingsStyle(score: number) {
 }
 
 export default function AnalysisCard({ product }: AnalysisCardProps) {
+  const [isAlertFormOpen, setIsAlertFormOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [targetPrice, setTargetPrice] = useState("");
+  const [alertError, setAlertError] = useState("");
+  const [isSavingAlert, setIsSavingAlert] = useState(false);
+  const [isAlertCreated, setIsAlertCreated] = useState(false);
+
   const potentialSavings = calculatePotentialSavings(
     product.currentPrice,
     product.lowestPrice90Days
@@ -71,6 +83,67 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
   const advice = getAdvice(score, potentialSavings.savings);
   const amazonUrl = product.amazonUrl.trim();
   const isAmazonLinkAvailable = amazonUrl !== "" && amazonUrl !== "#";
+
+  async function handleAlertSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const numericTargetPrice = Number(targetPrice);
+
+    if (!normalizedEmail) {
+      setAlertError("Inserisci la tua email.");
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setAlertError("Inserisci un indirizzo email valido.");
+      return;
+    }
+
+    if (!targetPrice || !Number.isFinite(numericTargetPrice)) {
+      setAlertError("Inserisci il prezzo desiderato.");
+      return;
+    }
+
+    if (numericTargetPrice <= 0) {
+      setAlertError("Il prezzo desiderato deve essere maggiore di zero.");
+      return;
+    }
+
+    if (numericTargetPrice >= product.currentPrice) {
+      setAlertError(
+        "Il prezzo desiderato deve essere inferiore al prezzo attuale."
+      );
+      return;
+    }
+
+    setAlertError("");
+    setIsSavingAlert(true);
+
+    try {
+      const response = await fetch("/api/alerts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productId: product.id,
+          email: normalizedEmail,
+          targetPrice: numericTargetPrice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Alert non salvato");
+      }
+
+      setIsAlertCreated(true);
+    } catch {
+      setAlertError("Non è stato possibile attivare l'alert. Riprova.");
+    } finally {
+      setIsSavingAlert(false);
+    }
+  }
 
   return (
     <section className="mx-auto mt-8 max-w-3xl rounded-3xl bg-white p-8 shadow-xl">
@@ -157,9 +230,105 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
             : "Il link per questo prodotto non è ancora disponibile."}
         </p>
 
-        <button className="w-full rounded-xl bg-gray-900 p-4 text-lg font-bold text-white">
-          🔔 Avvisami se scende ancora
-        </button>
+        {!isAlertFormOpen && !isAlertCreated && (
+          <button
+            type="button"
+            onClick={() => setIsAlertFormOpen(true)}
+            className="w-full rounded-xl bg-gray-900 p-4 text-lg font-bold text-white"
+          >
+            🔔 Avvisami se scende ancora
+          </button>
+        )}
+
+        {isAlertFormOpen && !isAlertCreated && (
+          <form
+            onSubmit={handleAlertSubmit}
+            className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-5"
+            noValidate
+          >
+            <div className="rounded-xl bg-white p-4">
+              <p className="text-sm font-bold text-gray-500">Alert per</p>
+              <p className="mt-1 font-bold text-gray-900">{product.title}</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Prezzo attuale: € {product.currentPrice.toLocaleString("it-IT")}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="alert-email" className="block font-bold">
+                Email
+              </label>
+              <input
+                id="alert-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                required
+                className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                placeholder="nome@esempio.it"
+              />
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="alert-target-price" className="block font-bold">
+                Prezzo desiderato
+              </label>
+              <div className="relative mt-2">
+                <span className="absolute inset-y-0 left-4 flex items-center text-gray-500">
+                  €
+                </span>
+                <input
+                  id="alert-target-price"
+                  type="number"
+                  value={targetPrice}
+                  onChange={(event) => setTargetPrice(event.target.value)}
+                  min="0.01"
+                  max={Math.max(0.01, product.currentPrice - 0.01)}
+                  step="0.01"
+                  inputMode="decimal"
+                  required
+                  className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-9 pr-4 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                  placeholder="0,00"
+                />
+              </div>
+              <p className="mt-2 text-sm text-gray-500">
+                Deve essere inferiore al prezzo attuale.
+              </p>
+            </div>
+
+            {alertError && (
+              <p
+                role="alert"
+                className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700"
+              >
+                {alertError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSavingAlert}
+              className="mt-5 w-full rounded-xl bg-gray-900 p-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSavingAlert ? "Attivazione in corso..." : "Attiva alert"}
+            </button>
+          </form>
+        )}
+
+        {isAlertCreated && (
+          <div
+            role="status"
+            className="rounded-2xl border border-green-300 bg-green-50 p-5 text-green-900"
+          >
+            <p className="font-extrabold">Alert attivato correttamente.</p>
+            <p className="mt-2 text-sm leading-relaxed">
+              L&apos;alert per {product.title} è stato salvato al prezzo desiderato
+              di €{" "}
+              {Number(targetPrice).toLocaleString("it-IT")}.
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );
