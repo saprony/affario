@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { Product } from "@/types/product";
 import { calculatePotentialSavings } from "@/lib/calculatePotentialSavings";
 
@@ -305,6 +306,17 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
                 {alertError}
               </p>
             )}
+
+            <p className="mt-5 text-sm leading-relaxed text-gray-600">
+              L&apos;indirizzo email sarà utilizzato esclusivamente per gestire
+              l&apos;alert prezzo richiesto.
+            </p>
+            <Link
+              href="/privacy"
+              className="mt-1 inline-block text-sm font-semibold text-green-700 underline underline-offset-2 hover:text-green-800"
+            >
+              Leggi l&apos;Informativa Privacy
+            </Link>
 
             <button
               type="submit"
