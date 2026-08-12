@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { products } from "@/data/products";
+import {
+  generateAlertManagementToken,
+  hashAlertManagementToken,
+} from "@/lib/alertManagementToken";
 import { sendAlertConfirmationEmail } from "@/services/brevoTransactionalEmail";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
@@ -17,6 +21,15 @@ function saveErrorResponse() {
     { message: "Non è stato possibile attivare l'alert. Riprova." },
     { status: 500 }
   );
+}
+
+function getManagementOrigin(request: Request): string {
+  const requestUrl = new URL(request.url);
+  const localHostnames = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+  return localHostnames.has(requestUrl.hostname)
+    ? requestUrl.origin
+    : "https://affario.it";
 }
 
 export async function POST(request: Request) {
@@ -56,6 +69,9 @@ export async function POST(request: Request) {
     return invalidAlertResponse();
   }
 
+  const managementToken = generateAlertManagementToken();
+  const managementTokenHash = hashAlertManagementToken(managementToken);
+
   try {
     const supabase = getSupabaseServerClient();
     const { error } = await supabase.from("price_alerts").insert({
@@ -64,6 +80,7 @@ export async function POST(request: Request) {
       email: normalizedEmail,
       target_price: targetPrice,
       current_price: product.currentPrice,
+      manage_token_hash: managementTokenHash,
     });
 
     if (error) {
@@ -74,6 +91,9 @@ export async function POST(request: Request) {
   }
 
   let confirmationEmailSent = false;
+  const managementUrl = `${getManagementOrigin(request)}/alert/${encodeURIComponent(
+    managementToken
+  )}`;
 
   try {
     await sendAlertConfirmationEmail({
@@ -81,6 +101,7 @@ export async function POST(request: Request) {
       productName: product.title,
       currentPrice: product.currentPrice,
       targetPrice,
+      managementUrl,
     });
     confirmationEmailSent = true;
   } catch (error) {

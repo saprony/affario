@@ -7,6 +7,7 @@ type AlertConfirmationEmail = {
   productName: string;
   currentPrice: number;
   targetPrice: number;
+  managementUrl: string;
 };
 
 function escapeHtml(value: string): string {
@@ -29,8 +30,10 @@ function createHtmlContent({
   productName,
   currentPrice,
   targetPrice,
+  managementUrl,
 }: Omit<AlertConfirmationEmail, "recipientEmail">): string {
   const safeProductName = escapeHtml(productName);
+  const safeManagementUrl = escapeHtml(managementUrl);
   const formattedCurrentPrice = formatPrice(currentPrice);
   const formattedTargetPrice = formatPrice(targetPrice);
 
@@ -71,6 +74,16 @@ function createHtmlContent({
             </p>
           </div>
 
+          <div style="margin-top:24px;border:1px solid #d1d5db;border-radius:12px;padding:18px;">
+            <p style="margin:0;font-size:17px;font-weight:700;color:#111827;">Gestisci questo alert</p>
+            <p style="margin:10px 0 0;font-size:14px;line-height:1.5;color:#4b5563;">
+              Usa il tuo link personale per visualizzare o eliminare questa richiesta di alert.
+            </p>
+            <p style="margin:18px 0 0;">
+              <a href="${safeManagementUrl}" style="display:inline-block;border-radius:10px;background-color:#166534;padding:12px 18px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Gestisci o elimina alert</a>
+            </p>
+          </div>
+
           <p style="margin:26px 0 0;font-size:17px;font-weight:700;line-height:1.5;color:#166534;">
             Gli affari non si trovano... si aspettano!
           </p>
@@ -91,6 +104,7 @@ function createTextContent({
   productName,
   currentPrice,
   targetPrice,
+  managementUrl,
 }: Omit<AlertConfirmationEmail, "recipientEmail">): string {
   return `AFFARIO
 
@@ -104,6 +118,9 @@ Prezzo desiderato: ${formatPrice(targetPrice)}
 
 Il sistema di monitoraggio automatico dei prezzi è in fase di attivazione.
 Riceverai le notifiche di prezzo quando il servizio sarà operativo.
+
+Gestisci questo alert
+Gestisci o elimina alert: ${managementUrl}
 
 Gli affari non si trovano... si aspettano!
 
