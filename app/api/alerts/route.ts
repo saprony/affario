@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { products } from "@/data/products";
+import { sendAlertConfirmationEmail } from "@/services/brevoTransactionalEmail";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,8 +73,30 @@ export async function POST(request: Request) {
     return saveErrorResponse();
   }
 
+  let confirmationEmailSent = false;
+
+  try {
+    await sendAlertConfirmationEmail({
+      recipientEmail: normalizedEmail,
+      productName: product.title,
+      currentPrice: product.currentPrice,
+      targetPrice,
+    });
+    confirmationEmailSent = true;
+  } catch (error) {
+    console.error(
+      "Invio email di conferma Brevo fallito.",
+      error instanceof Error ? error.message : "Errore sconosciuto"
+    );
+  }
+
   return NextResponse.json(
-    { message: "Alert attivato correttamente." },
+    {
+      message: confirmationEmailSent
+        ? "Alert registrato ed email di conferma inviata correttamente."
+        : "Alert registrato correttamente. Non siamo riusciti a inviare l'email di conferma.",
+      confirmationEmailSent,
+    },
     { status: 201 }
   );
 }
