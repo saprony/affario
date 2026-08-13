@@ -23,6 +23,17 @@ function saveErrorResponse() {
   );
 }
 
+function alertAlreadyExistsResponse() {
+  return NextResponse.json(
+    {
+      success: true,
+      alreadyExists: true,
+      confirmationEmailSent: false,
+    },
+    { status: 200 }
+  );
+}
+
 function getManagementOrigin(request: Request): string {
   const requestUrl = new URL(request.url);
   const localHostnames = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -82,6 +93,10 @@ export async function POST(request: Request) {
       current_price: product.currentPrice,
       manage_token_hash: managementTokenHash,
     });
+
+    if (error?.code === "23505") {
+      return alertAlreadyExistsResponse();
+    }
 
     if (error) {
       return saveErrorResponse();

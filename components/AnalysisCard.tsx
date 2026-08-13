@@ -72,6 +72,7 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
   const [alertError, setAlertError] = useState("");
   const [isSavingAlert, setIsSavingAlert] = useState(false);
   const [isAlertCreated, setIsAlertCreated] = useState(false);
+  const [isAlertAlreadyActive, setIsAlertAlreadyActive] = useState(false);
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
 
   const potentialSavings = calculatePotentialSavings(
@@ -140,12 +141,18 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
       }
 
       const result: unknown = await response.json();
+      const alertAlreadyExists =
+        typeof result === "object" &&
+        result !== null &&
+        "alreadyExists" in result &&
+        result.alreadyExists === true;
       const wasConfirmationEmailSent =
         typeof result === "object" &&
         result !== null &&
         "confirmationEmailSent" in result &&
         result.confirmationEmailSent === true;
 
+      setIsAlertAlreadyActive(alertAlreadyExists);
       setConfirmationEmailSent(wasConfirmationEmailSent);
       setIsAlertCreated(true);
     } catch {
@@ -342,20 +349,31 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
             role="status"
             className="rounded-2xl border border-green-300 bg-green-50 p-5 text-green-900"
           >
-            <p className="font-extrabold">Alert registrato correttamente.</p>
-            <p className="mt-2 text-sm leading-relaxed">
-              L&apos;alert per {product.title} è stato salvato al prezzo desiderato
-              di €{" "}
-              {Number(targetPrice).toLocaleString("it-IT")}.
-            </p>
-            {confirmationEmailSent ? (
-              <p className="mt-2 text-sm leading-relaxed">
-                Email di conferma inviata correttamente.
-              </p>
+            {isAlertAlreadyActive ? (
+              <>
+                <p className="font-extrabold">Questo alert è già attivo.</p>
+                <p className="mt-2 text-sm leading-relaxed">
+                  Riceverai le notifiche sull&apos;indirizzo email già registrato.
+                </p>
+              </>
             ) : (
-              <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold leading-relaxed text-amber-900">
-                Non siamo riusciti a inviare l&apos;email di conferma.
-              </p>
+              <>
+                <p className="font-extrabold">Alert registrato correttamente.</p>
+                <p className="mt-2 text-sm leading-relaxed">
+                  L&apos;alert per {product.title} è stato salvato al prezzo desiderato
+                  di €{" "}
+                  {Number(targetPrice).toLocaleString("it-IT")}.
+                </p>
+                {confirmationEmailSent ? (
+                  <p className="mt-2 text-sm leading-relaxed">
+                    Email di conferma inviata correttamente.
+                  </p>
+                ) : (
+                  <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold leading-relaxed text-amber-900">
+                    Non siamo riusciti a inviare l&apos;email di conferma.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
