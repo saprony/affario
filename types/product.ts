@@ -4,6 +4,11 @@ export type Product = {
   brand: string;
   category: string;
 
+  familyId: string;
+  familyTitle: string;
+  memory: string;
+  color: string;
+
   imageUrl?: string;
 
   currentPrice: number;
