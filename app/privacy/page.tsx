@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Informativa Privacy | AFFARIO",
+  title: "Informativa Privacy",
+  description:
+    "Informativa sul trattamento dei dati personali del servizio AFFARIO.",
 };
 
 export default function PrivacyPage() {

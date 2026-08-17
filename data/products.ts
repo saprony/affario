@@ -1,4 +1,5 @@
 import { Product } from "@/types/product";
+import { IPHONE_17_PRO_256_BLU_AFFILIATE_URL } from "@/data/affiliateLinks";
 
 export const products: Product[] = [
   {
@@ -27,7 +28,7 @@ export const products: Product[] = [
     color: "Blu profondo",
     currentPrice: 1149,
     lowestPrice90Days: 1089,
-    amazonUrl: "https://amzn.to/4wVKyZ4",
+    amazonUrl: IPHONE_17_PRO_256_BLU_AFFILIATE_URL,
     isAvailable: true,
     affarioScore: 84,
   },
