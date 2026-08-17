@@ -2,19 +2,31 @@ import "server-only";
 
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
-type IntermediateNotificationRow = {
-  intermediate_notified_at: string | null;
+type NotificationTimestampColumn =
+  | "intermediate_notified_at"
+  | "notified_at";
+
+type NotificationTimestampRow = {
+  intermediate_notified_at?: string | null;
+  notified_at?: string | null;
 };
 
-export type IntermediateNotificationState =
+type SupabaseServerClient = ReturnType<typeof getSupabaseServerClient>;
+
+type NotificationState =
   | { status: "pending" }
   | { status: "sent"; notifiedAt: string }
   | { status: "not-found" };
 
-export type MarkIntermediateNotificationResult =
+type MarkNotificationResult =
   | { status: "marked"; notifiedAt: string }
   | { status: "already-sent"; notifiedAt: string }
   | { status: "not-found" };
+
+export type IntermediateNotificationState = NotificationState;
+export type MarkIntermediateNotificationResult = MarkNotificationResult;
+export type TargetNotificationState = NotificationState;
+export type MarkTargetNotificationResult = MarkNotificationResult;
 
 export type PriceAlertNotificationStateErrorCode =
   | "INVALID_INPUT"
@@ -36,7 +48,7 @@ function invalidInput(message: string): PriceAlertNotificationStateError {
 
 function databaseError(): PriceAlertNotificationStateError {
   return new PriceAlertNotificationStateError(
-    "Non è stato possibile accedere allo stato della notifica intermedia.",
+    "Non è stato possibile accedere allo stato delle notifiche dell'alert.",
     "DATABASE_ERROR"
   );
 }
@@ -72,17 +84,17 @@ function normalizeNotifiedAt(notifiedAt: Date | string | undefined): string {
   return date.toISOString();
 }
 
-export async function getIntermediateNotificationState(
-  alertId: number
-): Promise<IntermediateNotificationState> {
-  const normalizedAlertId = validateAlertId(alertId);
-  const supabase = getSupabaseServerClient();
+async function readNotificationState(
+  supabase: SupabaseServerClient,
+  alertId: number,
+  column: NotificationTimestampColumn
+): Promise<NotificationState> {
   const { data, error } = await supabase
     .schema("public")
     .from("price_alerts")
-    .select("intermediate_notified_at")
-    .eq("id", normalizedAlertId)
-    .maybeSingle<IntermediateNotificationRow>();
+    .select(column)
+    .eq("id", alertId)
+    .maybeSingle<NotificationTimestampRow>();
 
   if (error) {
     throw databaseError();
@@ -92,45 +104,64 @@ export async function getIntermediateNotificationState(
     return { status: "not-found" };
   }
 
-  if (data.intermediate_notified_at === null) {
+  const notifiedAt = data[column];
+
+  if (notifiedAt === null) {
     return { status: "pending" };
   }
 
-  return {
-    status: "sent",
-    notifiedAt: data.intermediate_notified_at,
-  };
+  if (typeof notifiedAt !== "string") {
+    throw databaseError();
+  }
+
+  return { status: "sent", notifiedAt };
 }
 
-export async function markIntermediateNotificationSent(
+async function getNotificationState(
   alertId: number,
+  column: NotificationTimestampColumn
+): Promise<NotificationState> {
+  const normalizedAlertId = validateAlertId(alertId);
+  const supabase = getSupabaseServerClient();
+
+  return readNotificationState(supabase, normalizedAlertId, column);
+}
+
+async function markNotificationSent(
+  alertId: number,
+  column: NotificationTimestampColumn,
   notifiedAt?: Date | string
-): Promise<MarkIntermediateNotificationResult> {
+): Promise<MarkNotificationResult> {
   const normalizedAlertId = validateAlertId(alertId);
   const normalizedNotifiedAt = normalizeNotifiedAt(notifiedAt);
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .schema("public")
     .from("price_alerts")
-    .update({ intermediate_notified_at: normalizedNotifiedAt })
+    .update({ [column]: normalizedNotifiedAt })
     .eq("id", normalizedAlertId)
-    .is("intermediate_notified_at", null)
-    .select("intermediate_notified_at")
-    .maybeSingle<IntermediateNotificationRow>();
+    .is(column, null)
+    .select(column)
+    .maybeSingle<NotificationTimestampRow>();
 
   if (error) {
     throw databaseError();
   }
 
-  if (data?.intermediate_notified_at) {
-    return {
-      status: "marked",
-      notifiedAt: data.intermediate_notified_at,
-    };
+  const markedAt = data?.[column];
+
+  if (typeof markedAt === "string") {
+    return { status: "marked", notifiedAt: markedAt };
   }
 
-  const currentState = await getIntermediateNotificationState(
-    normalizedAlertId
+  if (data) {
+    throw databaseError();
+  }
+
+  const currentState = await readNotificationState(
+    supabase,
+    normalizedAlertId,
+    column
   );
 
   if (currentState.status === "sent") {
@@ -145,4 +176,34 @@ export async function markIntermediateNotificationSent(
   }
 
   throw databaseError();
+}
+
+export async function getIntermediateNotificationState(
+  alertId: number
+): Promise<IntermediateNotificationState> {
+  return getNotificationState(alertId, "intermediate_notified_at");
+}
+
+export async function markIntermediateNotificationSent(
+  alertId: number,
+  notifiedAt?: Date | string
+): Promise<MarkIntermediateNotificationResult> {
+  return markNotificationSent(
+    alertId,
+    "intermediate_notified_at",
+    notifiedAt
+  );
+}
+
+export async function getTargetNotificationState(
+  alertId: number
+): Promise<TargetNotificationState> {
+  return getNotificationState(alertId, "notified_at");
+}
+
+export async function markTargetNotificationSent(
+  alertId: number,
+  notifiedAt?: Date | string
+): Promise<MarkTargetNotificationResult> {
+  return markNotificationSent(alertId, "notified_at", notifiedAt);
 }
