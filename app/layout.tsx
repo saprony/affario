@@ -39,23 +39,41 @@ export default function RootLayout({
         {isPublicSite && <PublicHeader />}
         {children}
         {isPublicSite ? (
-          <footer className="border-t border-gray-200 bg-white px-5 py-8 text-center text-sm leading-relaxed text-gray-600">
-            <div className="mx-auto max-w-5xl">
-              <p>
-                In qualità di Affiliato Amazon io ricevo un guadagno dagli
-                acquisti idonei.
-              </p>
-              <p className="mt-2">AFFARIO è un servizio indipendente.</p>
-              <div className="mt-3 flex justify-center gap-5 font-semibold text-gray-700">
-                <Link href="/">Home</Link>
-                <Link href="/guide">Guide</Link>
+          <footer className="border-t border-emerald-950/10 bg-[#f5f6f2] px-5 py-10 text-sm leading-relaxed text-slate-600 sm:px-8">
+            <div className="mx-auto flex max-w-6xl flex-col gap-7 sm:flex-row sm:items-end sm:justify-between">
+              <div className="max-w-2xl text-center sm:text-left">
+                <p className="font-black tracking-[0.16em] text-emerald-800">
+                  AFFARIO
+                </p>
+                <p className="mt-3">
+                  In qualità di Affiliato Amazon io ricevo un guadagno dagli
+                  acquisti idonei.
+                </p>
+                <p className="mt-1.5">AFFARIO è un servizio indipendente.</p>
+              </div>
+              <nav
+                aria-label="Navigazione piè di pagina"
+                className="flex justify-center gap-5 font-bold text-slate-700 sm:justify-end"
+              >
+                <Link
+                  href="/"
+                  className="rounded-md hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  Home
+                </Link>
+                <Link
+                  href="/guide"
+                  className="rounded-md hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  Guide
+                </Link>
                 <Link
                   href="/privacy"
-                  className="underline underline-offset-2 hover:text-gray-900"
+                  className="rounded-md underline underline-offset-4 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
                   Privacy
                 </Link>
-              </div>
+              </nav>
             </div>
           </footer>
         ) : (
