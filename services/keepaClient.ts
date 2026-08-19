@@ -27,6 +27,22 @@ export type KeepaVariation = {
   attributes: readonly KeepaVariationAttribute[];
 };
 
+export type KeepaIntegerArray = readonly (number | null)[];
+
+export type KeepaPriceExtreme = readonly [
+  keepaTimeMinutes: number,
+  value: number,
+];
+
+export type KeepaPriceExtremeArray = readonly (KeepaPriceExtreme | null)[];
+
+export type KeepaStatistics = {
+  current?: KeepaIntegerArray;
+  avg?: KeepaIntegerArray;
+  avg90?: KeepaIntegerArray;
+  minInInterval?: KeepaPriceExtremeArray;
+};
+
 export type KeepaProductSummary = {
   asin: string;
   domainId: number;
@@ -41,6 +57,7 @@ export type KeepaProductSummary = {
   categoryTree?: readonly KeepaCategoryTreeEntry[];
   parentAsin?: string;
   variations?: readonly KeepaVariation[];
+  stats?: KeepaStatistics;
 };
 
 export type KeepaUsage = {
@@ -287,6 +304,77 @@ function mapVariations(value: unknown): KeepaVariation[] | undefined {
   return variations.length > 0 ? variations : undefined;
 }
 
+function mapIntegerArray(value: unknown): KeepaIntegerArray | undefined {
+  if (
+    !Array.isArray(value) ||
+    !value.every((entry) => entry === null || Number.isSafeInteger(entry))
+  ) {
+    return undefined;
+  }
+
+  return value as KeepaIntegerArray;
+}
+
+function mapPriceExtremeArray(
+  value: unknown
+): KeepaPriceExtremeArray | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const extremes: (KeepaPriceExtreme | null)[] = [];
+
+  for (const entry of value) {
+    if (entry === null) {
+      extremes.push(null);
+      continue;
+    }
+
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 2 ||
+      !Number.isSafeInteger(entry[0]) ||
+      !Number.isSafeInteger(entry[1])
+    ) {
+      return undefined;
+    }
+
+    extremes.push([entry[0] as number, entry[1] as number]);
+  }
+
+  return extremes;
+}
+
+function mapStatistics(value: unknown): KeepaStatistics | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const statistics: KeepaStatistics = {};
+  const current = mapIntegerArray(value.current);
+  const avg = mapIntegerArray(value.avg);
+  const avg90 = mapIntegerArray(value.avg90);
+  const minInInterval = mapPriceExtremeArray(value.minInInterval);
+
+  if (current) {
+    statistics.current = current;
+  }
+
+  if (avg) {
+    statistics.avg = avg;
+  }
+
+  if (avg90) {
+    statistics.avg90 = avg90;
+  }
+
+  if (minInInterval) {
+    statistics.minInInterval = minInInterval;
+  }
+
+  return statistics;
+}
+
 function mapProduct(
   payload: Record<string, unknown>,
   requestedAsin: string
@@ -345,6 +433,7 @@ function mapProduct(
   const categoryTree = mapCategoryTree(product.categoryTree);
   const parentAsin = readOptionalText(product.parentAsin)?.toUpperCase();
   const variations = mapVariations(product.variations);
+  const stats = mapStatistics(product.stats);
 
   if (brand) {
     result.brand = brand;
@@ -386,6 +475,10 @@ function mapProduct(
     result.variations = variations;
   }
 
+  if (stats) {
+    result.stats = stats;
+  }
+
   return result;
 }
 
@@ -399,6 +492,7 @@ export async function getKeepaProductByAsin(
   requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
   requestUrl.searchParams.set("asin", normalizedAsin);
   requestUrl.searchParams.set("history", "0");
+  requestUrl.searchParams.set("stats", "90");
 
   let response: Response;
 

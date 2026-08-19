@@ -4,7 +4,10 @@ import {
   getKeepaProductByAsin,
   type KeepaCategoryTreeEntry,
   type KeepaImage,
+  type KeepaIntegerArray,
+  type KeepaPriceExtremeArray,
   type KeepaProductSummary,
+  type KeepaStatistics,
   type KeepaUsage,
   type KeepaVariation,
 } from "@/services/keepaClient";
@@ -27,6 +30,10 @@ const PRODUCT_FIELDS_WITHOUT_KEEPA_DATA = [
 ] as const satisfies readonly (keyof Product)[];
 
 const AMAZON_IMAGE_BASE_URL = "https://m.media-amazon.com/images/I/";
+const KEEPA_AMAZON_PRICE_INDEX = 0;
+const KEEPA_NEW_PRICE_INDEX = 1;
+const KEEPA_TIME_MINUTES_OFFSET = 21_564_000;
+const PRICE_STATISTICS_INTERVAL_DAYS = 90;
 const MEMORY_VARIATION_DIMENSIONS = new Set([
   "digital storage capacity",
   "digitalstoragecapacity",
@@ -57,6 +64,26 @@ export type AffarioKeepaCategoryMetadata = {
   categoryTree?: readonly KeepaCategoryTreeEntry[];
 };
 
+export type AffarioKeepaMinimumPrice = {
+  amountInEuros: number;
+  keepaTimeMinutes: number;
+  observedAt: string;
+};
+
+export type AffarioKeepaPriceTypeStatistics = {
+  currentInEuros?: number;
+  averageInIntervalInEuros?: number;
+  average90DaysInEuros?: number;
+  minimumInInterval?: AffarioKeepaMinimumPrice;
+};
+
+export type AffarioKeepaPriceStatistics = {
+  intervalDays: 90;
+  currency: "EUR";
+  amazon: AffarioKeepaPriceTypeStatistics;
+  new: AffarioKeepaPriceTypeStatistics;
+};
+
 export type AffarioProductCandidate = {
   asin: string;
   amazonDomainId: number;
@@ -70,6 +97,7 @@ export type AffarioProductCandidate = {
   keepaCategories?: AffarioKeepaCategoryMetadata;
   parentAsin?: string;
   keepaVariations?: readonly KeepaVariation[];
+  keepaPriceStatistics?: AffarioKeepaPriceStatistics;
   externalIdentifiers: readonly ExternalProductIdentifier[];
   unavailableProductFields: readonly AffarioProductFieldWithoutRealData[];
 };
@@ -165,6 +193,99 @@ function getKeepaCategoryMetadata(
   return metadata;
 }
 
+function getPriceInCents(
+  values: KeepaIntegerArray | undefined,
+  priceTypeIndex: number
+): number | undefined {
+  const value = values?.[priceTypeIndex];
+
+  return typeof value === "number" && value >= 0 ? value : undefined;
+}
+
+function convertCentsToEuros(priceInCents: number): number {
+  return priceInCents / 100;
+}
+
+function getMinimumPrice(
+  values: KeepaPriceExtremeArray | undefined,
+  priceTypeIndex: number
+): AffarioKeepaMinimumPrice | undefined {
+  const minimum = values?.[priceTypeIndex];
+
+  if (!minimum) {
+    return undefined;
+  }
+
+  const [keepaTimeMinutes, priceInCents] = minimum;
+
+  if (keepaTimeMinutes < 0 || priceInCents < 0) {
+    return undefined;
+  }
+
+  const unixTimeInMs =
+    (keepaTimeMinutes + KEEPA_TIME_MINUTES_OFFSET) * 60_000;
+  const observedAt = new Date(unixTimeInMs);
+
+  if (Number.isNaN(observedAt.getTime())) {
+    return undefined;
+  }
+
+  return {
+    amountInEuros: convertCentsToEuros(priceInCents),
+    keepaTimeMinutes,
+    observedAt: observedAt.toISOString(),
+  };
+}
+
+function mapPriceTypeStatistics(
+  stats: KeepaStatistics,
+  priceTypeIndex: number
+): AffarioKeepaPriceTypeStatistics {
+  const priceStatistics: AffarioKeepaPriceTypeStatistics = {};
+  const currentPrice = getPriceInCents(stats.current, priceTypeIndex);
+  const averageInInterval = getPriceInCents(stats.avg, priceTypeIndex);
+  const average90Days = getPriceInCents(stats.avg90, priceTypeIndex);
+  const minimumInInterval = getMinimumPrice(
+    stats.minInInterval,
+    priceTypeIndex
+  );
+
+  if (currentPrice !== undefined) {
+    priceStatistics.currentInEuros = convertCentsToEuros(currentPrice);
+  }
+
+  if (averageInInterval !== undefined) {
+    priceStatistics.averageInIntervalInEuros =
+      convertCentsToEuros(averageInInterval);
+  }
+
+  if (average90Days !== undefined) {
+    priceStatistics.average90DaysInEuros =
+      convertCentsToEuros(average90Days);
+  }
+
+  if (minimumInInterval) {
+    priceStatistics.minimumInInterval = minimumInInterval;
+  }
+
+  return priceStatistics;
+}
+
+function getKeepaPriceStatistics(
+  stats: KeepaStatistics | undefined
+): AffarioKeepaPriceStatistics | undefined {
+  if (!stats) {
+    return undefined;
+  }
+
+  return {
+    intervalDays: PRICE_STATISTICS_INTERVAL_DAYS,
+    currency: "EUR",
+    amazon: mapPriceTypeStatistics(stats, KEEPA_AMAZON_PRICE_INDEX),
+    new: mapPriceTypeStatistics(stats, KEEPA_NEW_PRICE_INDEX),
+  };
+}
+
 function getUnavailableProductFields(
   keepaProduct: KeepaProductSummary,
   imageUrl: string | undefined,
@@ -205,6 +326,7 @@ function mapKeepaProductToAffarioCandidate(
     keepaProduct.variations
   );
   const keepaCategories = getKeepaCategoryMetadata(keepaProduct);
+  const keepaPriceStatistics = getKeepaPriceStatistics(keepaProduct.stats);
   const product: AffarioProductCandidate = {
     asin: keepaProduct.asin,
     amazonDomainId: keepaProduct.domainId,
@@ -256,6 +378,10 @@ function mapKeepaProductToAffarioCandidate(
 
   if (keepaProduct.variations) {
     product.keepaVariations = keepaProduct.variations;
+  }
+
+  if (keepaPriceStatistics) {
+    product.keepaPriceStatistics = keepaPriceStatistics;
   }
 
   return product;
