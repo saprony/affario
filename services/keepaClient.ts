@@ -41,6 +41,18 @@ export type KeepaStatistics = {
   avg?: KeepaIntegerArray;
   avg90?: KeepaIntegerArray;
   minInInterval?: KeepaPriceExtremeArray;
+  lastBuyBoxUpdate?: number;
+  buyBoxSellerId?: string;
+  buyBoxPrice?: number;
+  buyBoxShipping?: number;
+  buyBoxIsAmazon?: boolean;
+  buyBoxIsFBA?: boolean;
+  buyBoxIsPrimeEligible?: boolean;
+  buyBoxIsPrimeExclusive?: boolean;
+  buyBoxIsShippable?: boolean;
+  buyBoxIsPreorder?: boolean;
+  buyBoxIsBackorder?: boolean;
+  buyBoxAvailabilityMessage?: string;
 };
 
 export type KeepaProductSummary = {
@@ -175,6 +187,14 @@ function readOptionalCategoryId(value: unknown): number | undefined {
   }
 
   return value as number;
+}
+
+function readOptionalInteger(value: unknown): number | undefined {
+  return Number.isSafeInteger(value) ? (value as number) : undefined;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function mapImages(value: unknown): KeepaImage[] | undefined {
@@ -355,6 +375,24 @@ function mapStatistics(value: unknown): KeepaStatistics | undefined {
   const avg = mapIntegerArray(value.avg);
   const avg90 = mapIntegerArray(value.avg90);
   const minInInterval = mapPriceExtremeArray(value.minInInterval);
+  const lastBuyBoxUpdate = readOptionalInteger(value.lastBuyBoxUpdate);
+  const buyBoxSellerId = readOptionalText(value.buyBoxSellerId);
+  const buyBoxPrice = readOptionalInteger(value.buyBoxPrice);
+  const buyBoxShipping = readOptionalInteger(value.buyBoxShipping);
+  const buyBoxIsAmazon = readOptionalBoolean(value.buyBoxIsAmazon);
+  const buyBoxIsFBA = readOptionalBoolean(value.buyBoxIsFBA);
+  const buyBoxIsPrimeEligible = readOptionalBoolean(
+    value.buyBoxIsPrimeEligible
+  );
+  const buyBoxIsPrimeExclusive = readOptionalBoolean(
+    value.buyBoxIsPrimeExclusive
+  );
+  const buyBoxIsShippable = readOptionalBoolean(value.buyBoxIsShippable);
+  const buyBoxIsPreorder = readOptionalBoolean(value.buyBoxIsPreorder);
+  const buyBoxIsBackorder = readOptionalBoolean(value.buyBoxIsBackorder);
+  const buyBoxAvailabilityMessage = readOptionalText(
+    value.buyBoxAvailabilityMessage
+  );
 
   if (current) {
     statistics.current = current;
@@ -370,6 +408,54 @@ function mapStatistics(value: unknown): KeepaStatistics | undefined {
 
   if (minInInterval) {
     statistics.minInInterval = minInInterval;
+  }
+
+  if (lastBuyBoxUpdate !== undefined) {
+    statistics.lastBuyBoxUpdate = lastBuyBoxUpdate;
+  }
+
+  if (buyBoxSellerId) {
+    statistics.buyBoxSellerId = buyBoxSellerId;
+  }
+
+  if (buyBoxPrice !== undefined) {
+    statistics.buyBoxPrice = buyBoxPrice;
+  }
+
+  if (buyBoxShipping !== undefined) {
+    statistics.buyBoxShipping = buyBoxShipping;
+  }
+
+  if (buyBoxIsAmazon !== undefined) {
+    statistics.buyBoxIsAmazon = buyBoxIsAmazon;
+  }
+
+  if (buyBoxIsFBA !== undefined) {
+    statistics.buyBoxIsFBA = buyBoxIsFBA;
+  }
+
+  if (buyBoxIsPrimeEligible !== undefined) {
+    statistics.buyBoxIsPrimeEligible = buyBoxIsPrimeEligible;
+  }
+
+  if (buyBoxIsPrimeExclusive !== undefined) {
+    statistics.buyBoxIsPrimeExclusive = buyBoxIsPrimeExclusive;
+  }
+
+  if (buyBoxIsShippable !== undefined) {
+    statistics.buyBoxIsShippable = buyBoxIsShippable;
+  }
+
+  if (buyBoxIsPreorder !== undefined) {
+    statistics.buyBoxIsPreorder = buyBoxIsPreorder;
+  }
+
+  if (buyBoxIsBackorder !== undefined) {
+    statistics.buyBoxIsBackorder = buyBoxIsBackorder;
+  }
+
+  if (buyBoxAvailabilityMessage) {
+    statistics.buyBoxAvailabilityMessage = buyBoxAvailabilityMessage;
   }
 
   return statistics;
@@ -493,6 +579,7 @@ export async function getKeepaProductByAsin(
   requestUrl.searchParams.set("asin", normalizedAsin);
   requestUrl.searchParams.set("history", "0");
   requestUrl.searchParams.set("stats", "90");
+  requestUrl.searchParams.set("buybox", "1");
 
   let response: Response;
 

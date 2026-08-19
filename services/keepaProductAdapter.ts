@@ -32,8 +32,10 @@ const PRODUCT_FIELDS_WITHOUT_KEEPA_DATA = [
 const AMAZON_IMAGE_BASE_URL = "https://m.media-amazon.com/images/I/";
 const KEEPA_AMAZON_PRICE_INDEX = 0;
 const KEEPA_NEW_PRICE_INDEX = 1;
+const KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX = 18;
 const KEEPA_TIME_MINUTES_OFFSET = 21_564_000;
 const PRICE_STATISTICS_INTERVAL_DAYS = 90;
+const UNAVAILABLE_BUY_BOX_SELLER_IDS = new Set(["-1", "-2"]);
 const MEMORY_VARIATION_DIMENSIONS = new Set([
   "digital storage capacity",
   "digitalstoragecapacity",
@@ -84,6 +86,25 @@ export type AffarioKeepaPriceStatistics = {
   new: AffarioKeepaPriceTypeStatistics;
 };
 
+export type AffarioKeepaBuyBox = {
+  currency: "EUR";
+  currentIncludingShippingInEuros?: number;
+  priceInEuros?: number;
+  shippingInEuros?: number;
+  totalInEuros?: number;
+  sellerId?: string;
+  isAmazon?: boolean;
+  isFBA?: boolean;
+  isPrimeEligible?: boolean;
+  isPrimeExclusive?: boolean;
+  isShippable?: boolean;
+  isPreorder?: boolean;
+  isBackorder?: boolean;
+  availabilityMessage?: string;
+  lastUpdateKeepaTimeMinutes?: number;
+  lastUpdatedAt?: string;
+};
+
 export type AffarioProductCandidate = {
   asin: string;
   amazonDomainId: number;
@@ -98,6 +119,7 @@ export type AffarioProductCandidate = {
   parentAsin?: string;
   keepaVariations?: readonly KeepaVariation[];
   keepaPriceStatistics?: AffarioKeepaPriceStatistics;
+  keepaBuyBox?: AffarioKeepaBuyBox;
   externalIdentifiers: readonly ExternalProductIdentifier[];
   unavailableProductFields: readonly AffarioProductFieldWithoutRealData[];
 };
@@ -197,9 +219,27 @@ function getPriceInCents(
   values: KeepaIntegerArray | undefined,
   priceTypeIndex: number
 ): number | undefined {
-  const value = values?.[priceTypeIndex];
+  return getAvailablePriceInCents(values?.[priceTypeIndex]);
+}
 
+function getAvailablePriceInCents(
+  value: number | null | undefined
+): number | undefined {
   return typeof value === "number" && value >= 0 ? value : undefined;
+}
+
+function convertKeepaTimeToIso(keepaTimeMinutes: number): string | undefined {
+  if (keepaTimeMinutes < 0) {
+    return undefined;
+  }
+
+  const unixTimeInMs =
+    (keepaTimeMinutes + KEEPA_TIME_MINUTES_OFFSET) * 60_000;
+  const observedAt = new Date(unixTimeInMs);
+
+  return Number.isNaN(observedAt.getTime())
+    ? undefined
+    : observedAt.toISOString();
 }
 
 function convertCentsToEuros(priceInCents: number): number {
@@ -222,18 +262,16 @@ function getMinimumPrice(
     return undefined;
   }
 
-  const unixTimeInMs =
-    (keepaTimeMinutes + KEEPA_TIME_MINUTES_OFFSET) * 60_000;
-  const observedAt = new Date(unixTimeInMs);
+  const observedAt = convertKeepaTimeToIso(keepaTimeMinutes);
 
-  if (Number.isNaN(observedAt.getTime())) {
+  if (!observedAt) {
     return undefined;
   }
 
   return {
     amountInEuros: convertCentsToEuros(priceInCents),
     keepaTimeMinutes,
-    observedAt: observedAt.toISOString(),
+    observedAt,
   };
 }
 
@@ -286,6 +324,92 @@ function getKeepaPriceStatistics(
   };
 }
 
+function getKeepaBuyBox(
+  stats: KeepaStatistics | undefined
+): AffarioKeepaBuyBox | undefined {
+  if (!stats) {
+    return undefined;
+  }
+
+  const buyBox: AffarioKeepaBuyBox = { currency: "EUR" };
+  const currentIncludingShipping = getPriceInCents(
+    stats.current,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const price = getAvailablePriceInCents(stats.buyBoxPrice);
+  const shipping = getAvailablePriceInCents(stats.buyBoxShipping);
+  const sellerId =
+    stats.buyBoxSellerId &&
+    !UNAVAILABLE_BUY_BOX_SELLER_IDS.has(stats.buyBoxSellerId)
+      ? stats.buyBoxSellerId
+      : undefined;
+  const lastUpdatedAt =
+    stats.lastBuyBoxUpdate === undefined
+      ? undefined
+      : convertKeepaTimeToIso(stats.lastBuyBoxUpdate);
+
+  if (currentIncludingShipping !== undefined) {
+    buyBox.currentIncludingShippingInEuros = convertCentsToEuros(
+      currentIncludingShipping
+    );
+  }
+
+  if (price !== undefined) {
+    buyBox.priceInEuros = convertCentsToEuros(price);
+  }
+
+  if (shipping !== undefined) {
+    buyBox.shippingInEuros = convertCentsToEuros(shipping);
+  }
+
+  if (price !== undefined && shipping !== undefined) {
+    buyBox.totalInEuros = convertCentsToEuros(price + shipping);
+  }
+
+  if (sellerId) {
+    buyBox.sellerId = sellerId;
+  }
+
+  if (stats.buyBoxIsAmazon !== undefined) {
+    buyBox.isAmazon = stats.buyBoxIsAmazon;
+  }
+
+  if (stats.buyBoxIsFBA !== undefined) {
+    buyBox.isFBA = stats.buyBoxIsFBA;
+  }
+
+  if (stats.buyBoxIsPrimeEligible !== undefined) {
+    buyBox.isPrimeEligible = stats.buyBoxIsPrimeEligible;
+  }
+
+  if (stats.buyBoxIsPrimeExclusive !== undefined) {
+    buyBox.isPrimeExclusive = stats.buyBoxIsPrimeExclusive;
+  }
+
+  if (stats.buyBoxIsShippable !== undefined) {
+    buyBox.isShippable = stats.buyBoxIsShippable;
+  }
+
+  if (stats.buyBoxIsPreorder !== undefined) {
+    buyBox.isPreorder = stats.buyBoxIsPreorder;
+  }
+
+  if (stats.buyBoxIsBackorder !== undefined) {
+    buyBox.isBackorder = stats.buyBoxIsBackorder;
+  }
+
+  if (stats.buyBoxAvailabilityMessage) {
+    buyBox.availabilityMessage = stats.buyBoxAvailabilityMessage;
+  }
+
+  if (stats.lastBuyBoxUpdate !== undefined && lastUpdatedAt) {
+    buyBox.lastUpdateKeepaTimeMinutes = stats.lastBuyBoxUpdate;
+    buyBox.lastUpdatedAt = lastUpdatedAt;
+  }
+
+  return buyBox;
+}
+
 function getUnavailableProductFields(
   keepaProduct: KeepaProductSummary,
   imageUrl: string | undefined,
@@ -327,6 +451,7 @@ function mapKeepaProductToAffarioCandidate(
   );
   const keepaCategories = getKeepaCategoryMetadata(keepaProduct);
   const keepaPriceStatistics = getKeepaPriceStatistics(keepaProduct.stats);
+  const keepaBuyBox = getKeepaBuyBox(keepaProduct.stats);
   const product: AffarioProductCandidate = {
     asin: keepaProduct.asin,
     amazonDomainId: keepaProduct.domainId,
@@ -382,6 +507,10 @@ function mapKeepaProductToAffarioCandidate(
 
   if (keepaPriceStatistics) {
     product.keepaPriceStatistics = keepaPriceStatistics;
+  }
+
+  if (keepaBuyBox) {
+    product.keepaBuyBox = keepaBuyBox;
   }
 
   return product;
