@@ -5,12 +5,42 @@ const KEEPA_PRODUCT_ENDPOINT = "product";
 const AMAZON_ITALY_DOMAIN_ID = 8;
 const ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
+export type KeepaImage = {
+  l?: string;
+  m?: string;
+  variant?: string;
+};
+
+export type KeepaCategoryTreeEntry = {
+  catId: number;
+  name: string;
+};
+
+export type KeepaVariationAttribute = {
+  dimension: string;
+  value: string;
+};
+
+export type KeepaVariation = {
+  asin: string;
+  image?: string;
+  attributes: readonly KeepaVariationAttribute[];
+};
+
 export type KeepaProductSummary = {
   asin: string;
   domainId: number;
   title: string;
   brand?: string;
   model?: string;
+  images?: readonly KeepaImage[];
+  color?: string;
+  size?: string;
+  rootCategory?: number;
+  categories?: readonly number[];
+  categoryTree?: readonly KeepaCategoryTreeEntry[];
+  parentAsin?: string;
+  variations?: readonly KeepaVariation[];
 };
 
 export type KeepaUsage = {
@@ -122,6 +152,141 @@ function readOptionalText(value: unknown): string | undefined {
   return normalizedValue || undefined;
 }
 
+function readOptionalCategoryId(value: unknown): number | undefined {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    return undefined;
+  }
+
+  return value as number;
+}
+
+function mapImages(value: unknown): KeepaImage[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const images = value.flatMap((entry): KeepaImage[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const largeFileName = readOptionalText(entry.l);
+    const mediumFileName = readOptionalText(entry.m);
+
+    if (!largeFileName && !mediumFileName) {
+      return [];
+    }
+
+    const image: KeepaImage = {};
+    const variant = readOptionalText(entry.variant);
+
+    if (largeFileName) {
+      image.l = largeFileName;
+    }
+
+    if (mediumFileName) {
+      image.m = mediumFileName;
+    }
+
+    if (variant) {
+      image.variant = variant;
+    }
+
+    return [image];
+  });
+
+  return images.length > 0 ? images : undefined;
+}
+
+function mapCategoryIds(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((entry) => {
+    const categoryId = readOptionalCategoryId(entry);
+    return categoryId === undefined ? [] : [categoryId];
+  });
+}
+
+function mapCategoryTree(
+  value: unknown
+): KeepaCategoryTreeEntry[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((entry): KeepaCategoryTreeEntry[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const catId = readOptionalCategoryId(entry.catId);
+    const name = readOptionalText(entry.name);
+
+    if (catId === undefined || !name) {
+      return [];
+    }
+
+    return [{ catId, name }];
+  });
+}
+
+function mapVariationAttributes(
+  value: unknown
+): KeepaVariationAttribute[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry): KeepaVariationAttribute[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const dimension = readOptionalText(entry.dimension);
+    const attributeValue = readOptionalText(entry.value);
+
+    if (!dimension || !attributeValue) {
+      return [];
+    }
+
+    return [{ dimension, value: attributeValue }];
+  });
+}
+
+function mapVariations(value: unknown): KeepaVariation[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const variations = value.flatMap((entry): KeepaVariation[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const asin = readOptionalText(entry.asin)?.toUpperCase();
+
+    if (!asin || !ASIN_PATTERN.test(asin)) {
+      return [];
+    }
+
+    const variation: KeepaVariation = {
+      asin,
+      attributes: mapVariationAttributes(entry.attributes),
+    };
+    const image = readOptionalText(entry.image);
+
+    if (image) {
+      variation.image = image;
+    }
+
+    return [variation];
+  });
+
+  return variations.length > 0 ? variations : undefined;
+}
+
 function mapProduct(
   payload: Record<string, unknown>,
   requestedAsin: string
@@ -172,6 +337,14 @@ function mapProduct(
   };
   const brand = readOptionalText(product.brand);
   const model = readOptionalText(product.model);
+  const images = mapImages(product.images);
+  const color = readOptionalText(product.color);
+  const size = readOptionalText(product.size);
+  const rootCategory = readOptionalCategoryId(product.rootCategory);
+  const categories = mapCategoryIds(product.categories);
+  const categoryTree = mapCategoryTree(product.categoryTree);
+  const parentAsin = readOptionalText(product.parentAsin)?.toUpperCase();
+  const variations = mapVariations(product.variations);
 
   if (brand) {
     result.brand = brand;
@@ -179,6 +352,38 @@ function mapProduct(
 
   if (model) {
     result.model = model;
+  }
+
+  if (images) {
+    result.images = images;
+  }
+
+  if (color) {
+    result.color = color;
+  }
+
+  if (size) {
+    result.size = size;
+  }
+
+  if (rootCategory !== undefined) {
+    result.rootCategory = rootCategory;
+  }
+
+  if (categories) {
+    result.categories = categories;
+  }
+
+  if (categoryTree) {
+    result.categoryTree = categoryTree;
+  }
+
+  if (parentAsin && ASIN_PATTERN.test(parentAsin)) {
+    result.parentAsin = parentAsin;
+  }
+
+  if (variations) {
+    result.variations = variations;
   }
 
   return result;
