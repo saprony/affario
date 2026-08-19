@@ -3,10 +3,12 @@ import "server-only";
 import {
   getKeepaProductByAsin,
   type KeepaCategoryTreeEntry,
+  type KeepaCsv,
   type KeepaImage,
   type KeepaIntegerArray,
   type KeepaPriceExtremeArray,
   type KeepaProductSummary,
+  type KeepaRawProduct,
   type KeepaStatistics,
   type KeepaUsage,
   type KeepaVariation,
@@ -66,11 +68,13 @@ export type AffarioKeepaCategoryMetadata = {
   categoryTree?: readonly KeepaCategoryTreeEntry[];
 };
 
-export type AffarioKeepaMinimumPrice = {
+export type AffarioKeepaPriceExtreme = {
   amountInEuros: number;
   keepaTimeMinutes: number;
   observedAt: string;
 };
+
+export type AffarioKeepaMinimumPrice = AffarioKeepaPriceExtreme;
 
 export type AffarioKeepaPriceTypeStatistics = {
   currentInEuros?: number;
@@ -84,6 +88,63 @@ export type AffarioKeepaPriceStatistics = {
   currency: "EUR";
   amazon: AffarioKeepaPriceTypeStatistics;
   new: AffarioKeepaPriceTypeStatistics;
+};
+
+export type AffarioKeepaBuyBox90DayContext = {
+  intervalDays: 90;
+  averageInIntervalInEuros?: number;
+  average90DaysInEuros?: number;
+  minimumInInterval?: AffarioKeepaPriceExtreme;
+  maximumInInterval?: AffarioKeepaPriceExtreme;
+  outOfStockPercentageInInterval?: number;
+  outOfStockPercentage90Days?: number;
+};
+
+export type AffarioKeepaBuyBoxStatistics = {
+  intervalDays: 90;
+  atIntervalStartInEuros?: number;
+  averageInIntervalInEuros?: number;
+  average30DaysInEuros?: number;
+  average90DaysInEuros?: number;
+  average180DaysInEuros?: number;
+  average365DaysInEuros?: number;
+  minimumAllTime?: AffarioKeepaPriceExtreme;
+  maximumAllTime?: AffarioKeepaPriceExtreme;
+  minimumInInterval?: AffarioKeepaPriceExtreme;
+  maximumInInterval?: AffarioKeepaPriceExtreme;
+  outOfStockPercentageInInterval?: number;
+  outOfStockPercentage30Days?: number;
+  outOfStockPercentage90Days?: number;
+  outOfStockPercentage180Days?: number;
+  outOfStockPercentage365Days?: number;
+};
+
+export type AffarioKeepaBuyBoxHistoryPoint = {
+  keepaTimeMinutes: number;
+  observedAt: string;
+  rawPriceInCents: number;
+  rawShippingInCents: number;
+  priceInEuros?: number;
+  shippingInEuros?: number;
+  totalInCents?: number;
+  totalInEuros?: number;
+  isAvailable: boolean;
+};
+
+export type AffarioKeepaBuyBoxHistory = {
+  priceTypeIndex: 18;
+  includesShipping: true;
+  points: readonly AffarioKeepaBuyBoxHistoryPoint[];
+};
+
+export type AffarioKeepaInternalBuyBoxData = {
+  statistics?: AffarioKeepaBuyBoxStatistics;
+  fullHistory?: AffarioKeepaBuyBoxHistory;
+};
+
+export type AffarioKeepaInternalData = {
+  rawProduct: KeepaRawProduct;
+  buyBox?: AffarioKeepaInternalBuyBoxData;
 };
 
 export type AffarioKeepaBuyBox = {
@@ -103,6 +164,7 @@ export type AffarioKeepaBuyBox = {
   availabilityMessage?: string;
   lastUpdateKeepaTimeMinutes?: number;
   lastUpdatedAt?: string;
+  context90Days?: AffarioKeepaBuyBox90DayContext;
 };
 
 export type AffarioProductCandidate = {
@@ -126,6 +188,7 @@ export type AffarioProductCandidate = {
 
 export type AffarioProductCandidateResult = {
   product: AffarioProductCandidate;
+  internalKeepaData: AffarioKeepaInternalData;
   usage: KeepaUsage;
 };
 
@@ -246,17 +309,17 @@ function convertCentsToEuros(priceInCents: number): number {
   return priceInCents / 100;
 }
 
-function getMinimumPrice(
+function getPriceExtreme(
   values: KeepaPriceExtremeArray | undefined,
   priceTypeIndex: number
-): AffarioKeepaMinimumPrice | undefined {
-  const minimum = values?.[priceTypeIndex];
+): AffarioKeepaPriceExtreme | undefined {
+  const extreme = values?.[priceTypeIndex];
 
-  if (!minimum) {
+  if (!extreme) {
     return undefined;
   }
 
-  const [keepaTimeMinutes, priceInCents] = minimum;
+  const [keepaTimeMinutes, priceInCents] = extreme;
 
   if (keepaTimeMinutes < 0 || priceInCents < 0) {
     return undefined;
@@ -283,7 +346,7 @@ function mapPriceTypeStatistics(
   const currentPrice = getPriceInCents(stats.current, priceTypeIndex);
   const averageInInterval = getPriceInCents(stats.avg, priceTypeIndex);
   const average90Days = getPriceInCents(stats.avg90, priceTypeIndex);
-  const minimumInInterval = getMinimumPrice(
+  const minimumInInterval = getPriceExtreme(
     stats.minInInterval,
     priceTypeIndex
   );
@@ -324,6 +387,247 @@ function getKeepaPriceStatistics(
   };
 }
 
+function getPercentage(
+  values: KeepaIntegerArray | undefined,
+  priceTypeIndex: number
+): number | undefined {
+  const value = values?.[priceTypeIndex];
+
+  return typeof value === "number" && value >= 0 && value <= 100
+    ? value
+    : undefined;
+}
+
+function getKeepaBuyBoxStatistics(
+  stats: KeepaStatistics | undefined
+): AffarioKeepaBuyBoxStatistics | undefined {
+  if (!stats) {
+    return undefined;
+  }
+
+  const statistics: AffarioKeepaBuyBoxStatistics = {
+    intervalDays: PRICE_STATISTICS_INTERVAL_DAYS,
+  };
+  const atIntervalStart = getPriceInCents(
+    stats.atIntervalStart,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const averageInInterval = getPriceInCents(
+    stats.avg,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const average30Days = getPriceInCents(
+    stats.avg30,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const average90Days = getPriceInCents(
+    stats.avg90,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const average180Days = getPriceInCents(
+    stats.avg180,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const average365Days = getPriceInCents(
+    stats.avg365,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const minimumAllTime = getPriceExtreme(
+    stats.min,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const maximumAllTime = getPriceExtreme(
+    stats.max,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const minimumInInterval = getPriceExtreme(
+    stats.minInInterval,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const maximumInInterval = getPriceExtreme(
+    stats.maxInInterval,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const outOfStockPercentageInInterval = getPercentage(
+    stats.outOfStockPercentageInInterval,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const outOfStockPercentage30Days = getPercentage(
+    stats.outOfStockPercentage30,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const outOfStockPercentage90Days = getPercentage(
+    stats.outOfStockPercentage90,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const outOfStockPercentage180Days = getPercentage(
+    stats.outOfStockPercentage180,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+  const outOfStockPercentage365Days = getPercentage(
+    stats.outOfStockPercentage365,
+    KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX
+  );
+
+  if (atIntervalStart !== undefined) {
+    statistics.atIntervalStartInEuros =
+      convertCentsToEuros(atIntervalStart);
+  }
+
+  if (averageInInterval !== undefined) {
+    statistics.averageInIntervalInEuros =
+      convertCentsToEuros(averageInInterval);
+  }
+
+  if (average30Days !== undefined) {
+    statistics.average30DaysInEuros = convertCentsToEuros(average30Days);
+  }
+
+  if (average90Days !== undefined) {
+    statistics.average90DaysInEuros = convertCentsToEuros(average90Days);
+  }
+
+  if (average180Days !== undefined) {
+    statistics.average180DaysInEuros =
+      convertCentsToEuros(average180Days);
+  }
+
+  if (average365Days !== undefined) {
+    statistics.average365DaysInEuros =
+      convertCentsToEuros(average365Days);
+  }
+
+  if (minimumAllTime) {
+    statistics.minimumAllTime = minimumAllTime;
+  }
+
+  if (maximumAllTime) {
+    statistics.maximumAllTime = maximumAllTime;
+  }
+
+  if (minimumInInterval) {
+    statistics.minimumInInterval = minimumInInterval;
+  }
+
+  if (maximumInInterval) {
+    statistics.maximumInInterval = maximumInInterval;
+  }
+
+  if (outOfStockPercentageInInterval !== undefined) {
+    statistics.outOfStockPercentageInInterval =
+      outOfStockPercentageInInterval;
+  }
+
+  if (outOfStockPercentage30Days !== undefined) {
+    statistics.outOfStockPercentage30Days = outOfStockPercentage30Days;
+  }
+
+  if (outOfStockPercentage90Days !== undefined) {
+    statistics.outOfStockPercentage90Days = outOfStockPercentage90Days;
+  }
+
+  if (outOfStockPercentage180Days !== undefined) {
+    statistics.outOfStockPercentage180Days = outOfStockPercentage180Days;
+  }
+
+  if (outOfStockPercentage365Days !== undefined) {
+    statistics.outOfStockPercentage365Days = outOfStockPercentage365Days;
+  }
+
+  return statistics;
+}
+
+function getKeepaBuyBox90DayContext(
+  statistics: AffarioKeepaBuyBoxStatistics
+): AffarioKeepaBuyBox90DayContext {
+  const context: AffarioKeepaBuyBox90DayContext = {
+    intervalDays: PRICE_STATISTICS_INTERVAL_DAYS,
+  };
+
+  if (statistics.averageInIntervalInEuros !== undefined) {
+    context.averageInIntervalInEuros =
+      statistics.averageInIntervalInEuros;
+  }
+
+  if (statistics.average90DaysInEuros !== undefined) {
+    context.average90DaysInEuros = statistics.average90DaysInEuros;
+  }
+
+  if (statistics.minimumInInterval) {
+    context.minimumInInterval = statistics.minimumInInterval;
+  }
+
+  if (statistics.maximumInInterval) {
+    context.maximumInInterval = statistics.maximumInInterval;
+  }
+
+  if (statistics.outOfStockPercentageInInterval !== undefined) {
+    context.outOfStockPercentageInInterval =
+      statistics.outOfStockPercentageInInterval;
+  }
+
+  if (statistics.outOfStockPercentage90Days !== undefined) {
+    context.outOfStockPercentage90Days =
+      statistics.outOfStockPercentage90Days;
+  }
+
+  return context;
+}
+
+function getKeepaBuyBoxHistory(
+  csv: KeepaCsv | undefined
+): AffarioKeepaBuyBoxHistory | undefined {
+  const series = csv?.[KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX];
+
+  if (!series || series.length === 0 || series.length % 3 !== 0) {
+    return undefined;
+  }
+
+  const points: AffarioKeepaBuyBoxHistoryPoint[] = [];
+
+  for (let index = 0; index < series.length; index += 3) {
+    const keepaTimeMinutes = series[index];
+    const rawPriceInCents = series[index + 1];
+    const rawShippingInCents = series[index + 2];
+    const observedAt = convertKeepaTimeToIso(keepaTimeMinutes);
+
+    if (!observedAt) {
+      continue;
+    }
+
+    const point: AffarioKeepaBuyBoxHistoryPoint = {
+      keepaTimeMinutes,
+      observedAt,
+      rawPriceInCents,
+      rawShippingInCents,
+      isAvailable: rawPriceInCents >= 0,
+    };
+
+    if (rawPriceInCents >= 0) {
+      point.priceInEuros = convertCentsToEuros(rawPriceInCents);
+    }
+
+    if (rawShippingInCents >= 0) {
+      point.shippingInEuros = convertCentsToEuros(rawShippingInCents);
+    }
+
+    if (rawPriceInCents >= 0 && rawShippingInCents >= 0) {
+      point.totalInCents = rawPriceInCents + rawShippingInCents;
+      point.totalInEuros = convertCentsToEuros(point.totalInCents);
+    }
+
+    points.push(point);
+  }
+
+  return points.length > 0
+    ? {
+        priceTypeIndex: KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX,
+        includesShipping: true,
+        points,
+      }
+    : undefined;
+}
+
 function getKeepaBuyBox(
   stats: KeepaStatistics | undefined
 ): AffarioKeepaBuyBox | undefined {
@@ -347,6 +651,7 @@ function getKeepaBuyBox(
     stats.lastBuyBoxUpdate === undefined
       ? undefined
       : convertKeepaTimeToIso(stats.lastBuyBoxUpdate);
+  const statistics = getKeepaBuyBoxStatistics(stats);
 
   if (currentIncludingShipping !== undefined) {
     buyBox.currentIncludingShippingInEuros = convertCentsToEuros(
@@ -405,6 +710,10 @@ function getKeepaBuyBox(
   if (stats.lastBuyBoxUpdate !== undefined && lastUpdatedAt) {
     buyBox.lastUpdateKeepaTimeMinutes = stats.lastBuyBoxUpdate;
     buyBox.lastUpdatedAt = lastUpdatedAt;
+  }
+
+  if (statistics) {
+    buyBox.context90Days = getKeepaBuyBox90DayContext(statistics);
   }
 
   return buyBox;
@@ -516,6 +825,29 @@ function mapKeepaProductToAffarioCandidate(
   return product;
 }
 
+function getInternalKeepaData(
+  keepaProduct: KeepaProductSummary,
+  rawProduct: KeepaRawProduct
+): AffarioKeepaInternalData {
+  const internalData: AffarioKeepaInternalData = { rawProduct };
+  const statistics = getKeepaBuyBoxStatistics(keepaProduct.stats);
+  const fullHistory = getKeepaBuyBoxHistory(keepaProduct.csv);
+
+  if (statistics || fullHistory) {
+    internalData.buyBox = {};
+
+    if (statistics) {
+      internalData.buyBox.statistics = statistics;
+    }
+
+    if (fullHistory) {
+      internalData.buyBox.fullHistory = fullHistory;
+    }
+  }
+
+  return internalData;
+}
+
 export async function getAffarioProductCandidateByAsin(
   asin: string
 ): Promise<AffarioProductCandidateResult> {
@@ -523,6 +855,10 @@ export async function getAffarioProductCandidateByAsin(
 
   return {
     product: mapKeepaProductToAffarioCandidate(keepaResult.product),
+    internalKeepaData: getInternalKeepaData(
+      keepaResult.product,
+      keepaResult.rawProduct
+    ),
     usage: keepaResult.usage,
   };
 }

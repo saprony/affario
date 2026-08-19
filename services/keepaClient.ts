@@ -36,11 +36,29 @@ export type KeepaPriceExtreme = readonly [
 
 export type KeepaPriceExtremeArray = readonly (KeepaPriceExtreme | null)[];
 
+export type KeepaCsvSeries = readonly number[];
+
+export type KeepaCsv = readonly (KeepaCsvSeries | null)[];
+
+export type KeepaRawProduct = Readonly<Record<string, unknown>>;
+
 export type KeepaStatistics = {
   current?: KeepaIntegerArray;
   avg?: KeepaIntegerArray;
+  avg30?: KeepaIntegerArray;
   avg90?: KeepaIntegerArray;
+  avg180?: KeepaIntegerArray;
+  avg365?: KeepaIntegerArray;
+  atIntervalStart?: KeepaIntegerArray;
+  min?: KeepaPriceExtremeArray;
+  max?: KeepaPriceExtremeArray;
   minInInterval?: KeepaPriceExtremeArray;
+  maxInInterval?: KeepaPriceExtremeArray;
+  outOfStockPercentageInInterval?: KeepaIntegerArray;
+  outOfStockPercentage30?: KeepaIntegerArray;
+  outOfStockPercentage90?: KeepaIntegerArray;
+  outOfStockPercentage180?: KeepaIntegerArray;
+  outOfStockPercentage365?: KeepaIntegerArray;
   lastBuyBoxUpdate?: number;
   buyBoxSellerId?: string;
   buyBoxPrice?: number;
@@ -69,6 +87,7 @@ export type KeepaProductSummary = {
   categoryTree?: readonly KeepaCategoryTreeEntry[];
   parentAsin?: string;
   variations?: readonly KeepaVariation[];
+  csv?: KeepaCsv;
   stats?: KeepaStatistics;
 };
 
@@ -82,6 +101,7 @@ export type KeepaUsage = {
 
 export type KeepaProductResult = {
   product: KeepaProductSummary;
+  rawProduct: KeepaRawProduct;
   usage: KeepaUsage;
 };
 
@@ -365,6 +385,32 @@ function mapPriceExtremeArray(
   return extremes;
 }
 
+function mapCsv(value: unknown): KeepaCsv | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const csv: (KeepaCsvSeries | null)[] = [];
+
+  for (const series of value) {
+    if (series === null) {
+      csv.push(null);
+      continue;
+    }
+
+    if (
+      !Array.isArray(series) ||
+      !series.every((entry) => Number.isSafeInteger(entry))
+    ) {
+      return undefined;
+    }
+
+    csv.push(series as number[]);
+  }
+
+  return csv;
+}
+
 function mapStatistics(value: unknown): KeepaStatistics | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -373,8 +419,30 @@ function mapStatistics(value: unknown): KeepaStatistics | undefined {
   const statistics: KeepaStatistics = {};
   const current = mapIntegerArray(value.current);
   const avg = mapIntegerArray(value.avg);
+  const avg30 = mapIntegerArray(value.avg30);
   const avg90 = mapIntegerArray(value.avg90);
+  const avg180 = mapIntegerArray(value.avg180);
+  const avg365 = mapIntegerArray(value.avg365);
+  const atIntervalStart = mapIntegerArray(value.atIntervalStart);
+  const min = mapPriceExtremeArray(value.min);
+  const max = mapPriceExtremeArray(value.max);
   const minInInterval = mapPriceExtremeArray(value.minInInterval);
+  const maxInInterval = mapPriceExtremeArray(value.maxInInterval);
+  const outOfStockPercentageInInterval = mapIntegerArray(
+    value.outOfStockPercentageInInterval
+  );
+  const outOfStockPercentage30 = mapIntegerArray(
+    value.outOfStockPercentage30
+  );
+  const outOfStockPercentage90 = mapIntegerArray(
+    value.outOfStockPercentage90
+  );
+  const outOfStockPercentage180 = mapIntegerArray(
+    value.outOfStockPercentage180
+  );
+  const outOfStockPercentage365 = mapIntegerArray(
+    value.outOfStockPercentage365
+  );
   const lastBuyBoxUpdate = readOptionalInteger(value.lastBuyBoxUpdate);
   const buyBoxSellerId = readOptionalText(value.buyBoxSellerId);
   const buyBoxPrice = readOptionalInteger(value.buyBoxPrice);
@@ -402,12 +470,61 @@ function mapStatistics(value: unknown): KeepaStatistics | undefined {
     statistics.avg = avg;
   }
 
+  if (avg30) {
+    statistics.avg30 = avg30;
+  }
+
   if (avg90) {
     statistics.avg90 = avg90;
   }
 
+  if (avg180) {
+    statistics.avg180 = avg180;
+  }
+
+  if (avg365) {
+    statistics.avg365 = avg365;
+  }
+
+  if (atIntervalStart) {
+    statistics.atIntervalStart = atIntervalStart;
+  }
+
+  if (min) {
+    statistics.min = min;
+  }
+
+  if (max) {
+    statistics.max = max;
+  }
+
   if (minInInterval) {
     statistics.minInInterval = minInInterval;
+  }
+
+  if (maxInInterval) {
+    statistics.maxInInterval = maxInInterval;
+  }
+
+  if (outOfStockPercentageInInterval) {
+    statistics.outOfStockPercentageInInterval =
+      outOfStockPercentageInInterval;
+  }
+
+  if (outOfStockPercentage30) {
+    statistics.outOfStockPercentage30 = outOfStockPercentage30;
+  }
+
+  if (outOfStockPercentage90) {
+    statistics.outOfStockPercentage90 = outOfStockPercentage90;
+  }
+
+  if (outOfStockPercentage180) {
+    statistics.outOfStockPercentage180 = outOfStockPercentage180;
+  }
+
+  if (outOfStockPercentage365) {
+    statistics.outOfStockPercentage365 = outOfStockPercentage365;
   }
 
   if (lastBuyBoxUpdate !== undefined) {
@@ -461,10 +578,15 @@ function mapStatistics(value: unknown): KeepaStatistics | undefined {
   return statistics;
 }
 
+type MappedKeepaProduct = {
+  summary: KeepaProductSummary;
+  rawProduct: KeepaRawProduct;
+};
+
 function mapProduct(
   payload: Record<string, unknown>,
   requestedAsin: string
-): KeepaProductSummary {
+): MappedKeepaProduct {
   const products = payload.products;
 
   if (!Array.isArray(products)) {
@@ -519,6 +641,7 @@ function mapProduct(
   const categoryTree = mapCategoryTree(product.categoryTree);
   const parentAsin = readOptionalText(product.parentAsin)?.toUpperCase();
   const variations = mapVariations(product.variations);
+  const csv = mapCsv(product.csv);
   const stats = mapStatistics(product.stats);
 
   if (brand) {
@@ -561,11 +684,15 @@ function mapProduct(
     result.variations = variations;
   }
 
+  if (csv) {
+    result.csv = csv;
+  }
+
   if (stats) {
     result.stats = stats;
   }
 
-  return result;
+  return { summary: result, rawProduct: product };
 }
 
 export async function getKeepaProductByAsin(
@@ -577,7 +704,6 @@ export async function getKeepaProductByAsin(
   requestUrl.searchParams.set("key", apiKey);
   requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
   requestUrl.searchParams.set("asin", normalizedAsin);
-  requestUrl.searchParams.set("history", "0");
   requestUrl.searchParams.set("stats", "90");
   requestUrl.searchParams.set("buybox", "1");
 
@@ -630,8 +756,11 @@ export async function getKeepaProductByAsin(
     );
   }
 
+  const mappedProduct = mapProduct(payload, normalizedAsin);
+
   return {
-    product: mapProduct(payload, normalizedAsin),
+    product: mappedProduct.summary,
+    rawProduct: mappedProduct.rawProduct,
     usage: mapUsage(payload),
   };
 }
