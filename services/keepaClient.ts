@@ -2,6 +2,7 @@ import "server-only";
 
 const KEEPA_BASE_URL = "https://api.keepa.com/";
 const KEEPA_PRODUCT_ENDPOINT = "product";
+const KEEPA_SEARCH_ENDPOINT = "search";
 const AMAZON_ITALY_DOMAIN_ID = 8;
 const ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
@@ -105,9 +106,15 @@ export type KeepaProductResult = {
   usage: KeepaUsage;
 };
 
+export type KeepaProductSearchResult = {
+  products: readonly KeepaProductSummary[];
+  usage: KeepaUsage;
+};
+
 export type KeepaClientErrorCode =
   | "MISSING_API_KEY"
   | "INVALID_ASIN"
+  | "INVALID_QUERY"
   | "NETWORK_ERROR"
   | "KEEPA_HTTP_ERROR"
   | "OUT_OF_TOKENS"
@@ -695,18 +702,56 @@ function mapProduct(
   return { summary: result, rawProduct: product };
 }
 
-export async function getKeepaProductByAsin(
-  asin: string
-): Promise<KeepaProductResult> {
-  const normalizedAsin = normalizeKeepaAsin(asin);
-  const apiKey = getApiKey();
-  const requestUrl = new URL(KEEPA_PRODUCT_ENDPOINT, KEEPA_BASE_URL);
-  requestUrl.searchParams.set("key", apiKey);
-  requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
-  requestUrl.searchParams.set("asin", normalizedAsin);
-  requestUrl.searchParams.set("stats", "90");
-  requestUrl.searchParams.set("buybox", "1");
+function mapProductSearch(
+  payload: Record<string, unknown>
+): KeepaProductSummary[] {
+  const products = payload.products;
 
+  if (!Array.isArray(products)) {
+    throw new KeepaClientError(
+      "La risposta Keepa non contiene un elenco prodotti valido.",
+      "INVALID_RESPONSE"
+    );
+  }
+
+  const mappedProducts = products.flatMap((product) => {
+    if (!isRecord(product)) {
+      return [];
+    }
+
+    const asin = readOptionalText(product.asin)?.toUpperCase();
+
+    if (!asin || !ASIN_PATTERN.test(asin)) {
+      return [];
+    }
+
+    try {
+      return [mapProduct({ products: [product] }, asin).summary];
+    } catch (error) {
+      if (
+        error instanceof KeepaClientError &&
+        error.code === "INVALID_RESPONSE"
+      ) {
+        return [];
+      }
+
+      throw error;
+    }
+  });
+
+  if (products.length > 0 && mappedProducts.length === 0) {
+    throw new KeepaClientError(
+      "La risposta Keepa contiene dati prodotto insufficienti.",
+      "INVALID_RESPONSE"
+    );
+  }
+
+  return mappedProducts;
+}
+
+async function requestKeepa(
+  requestUrl: URL
+): Promise<Record<string, unknown>> {
   let response: Response;
 
   try {
@@ -755,6 +800,51 @@ export async function getKeepaProductByAsin(
       "INVALID_RESPONSE"
     );
   }
+
+  return payload;
+}
+
+export async function searchKeepaProducts(
+  query: string
+): Promise<KeepaProductSearchResult> {
+  const searchTerm = query.trim();
+
+  if (!searchTerm) {
+    throw new KeepaClientError(
+      "Il termine di ricerca Keepa non può essere vuoto.",
+      "INVALID_QUERY"
+    );
+  }
+
+  const apiKey = getApiKey();
+  const requestUrl = new URL(KEEPA_SEARCH_ENDPOINT, KEEPA_BASE_URL);
+  requestUrl.searchParams.set("key", apiKey);
+  requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
+  requestUrl.searchParams.set("type", "product");
+  requestUrl.searchParams.set("term", searchTerm);
+  requestUrl.searchParams.set("history", "0");
+
+  const payload = await requestKeepa(requestUrl);
+
+  return {
+    products: mapProductSearch(payload),
+    usage: mapUsage(payload),
+  };
+}
+
+export async function getKeepaProductByAsin(
+  asin: string
+): Promise<KeepaProductResult> {
+  const normalizedAsin = normalizeKeepaAsin(asin);
+  const apiKey = getApiKey();
+  const requestUrl = new URL(KEEPA_PRODUCT_ENDPOINT, KEEPA_BASE_URL);
+  requestUrl.searchParams.set("key", apiKey);
+  requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
+  requestUrl.searchParams.set("asin", normalizedAsin);
+  requestUrl.searchParams.set("stats", "90");
+  requestUrl.searchParams.set("buybox", "1");
+
+  const payload = await requestKeepa(requestUrl);
 
   const mappedProduct = mapProduct(payload, normalizedAsin);
 
