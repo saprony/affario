@@ -1,0 +1,319 @@
+import "server-only";
+
+import type { PostgrestError } from "@supabase/supabase-js";
+
+import {
+  normalizeKeepaAsin,
+  type KeepaUsage,
+} from "@/services/keepaClient";
+import { getAffarioProductCandidateByAsin } from "@/services/keepaProductAdapter";
+import { persistKeepaProduct } from "@/services/keepaPersistence";
+import { getSupabaseServerClient } from "@/services/supabaseServer";
+
+export const AFFARIO_KEEPA_CACHE_TTL_MINUTES = 60;
+
+const AFFARIO_KEEPA_CACHE_TTL_MS =
+  AFFARIO_KEEPA_CACHE_TTL_MINUTES * 60 * 1_000;
+
+export type AffarioProductLookupSource =
+  | "DATABASE_CACHE"
+  | "KEEPA_REFRESH";
+
+export type AffarioLookupProduct = {
+  asin: string;
+  amazonDomainId: number;
+  parentAsin: string | null;
+  title: string;
+  brand: string | null;
+  model: string | null;
+  color: string | null;
+  size: string | null;
+  imageUrl: string | null;
+  rootCategory: number | null;
+  categoryIds: readonly number[] | null;
+  categoryTree: readonly unknown[] | null;
+};
+
+export type AffarioLookupBuyBox = {
+  currentIncludingShippingInEuros: number | null;
+  priceInEuros: number | null;
+  shippingInEuros: number | null;
+  totalInEuros: number | null;
+  currency: string;
+  sellerId: string | null;
+  isAmazon: boolean | null;
+  isFBA: boolean | null;
+  isPrimeEligible: boolean | null;
+  isPrimeExclusive: boolean | null;
+  isShippable: boolean | null;
+  isPreorder: boolean | null;
+  isBackorder: boolean | null;
+  availabilityMessage: string | null;
+};
+
+export type AffarioProductLookupResult = {
+  asin: string;
+  product: AffarioLookupProduct;
+  buyBox: AffarioLookupBuyBox;
+  currency: string;
+  lastBuyBoxUpdate: string | null;
+  buyBoxAgeMinutes: number | null;
+  lastKeepaCheckAt: string;
+  lastKeepaCheckAgeMinutes: number;
+  source: AffarioProductLookupSource;
+  cacheHit: boolean;
+  tokensConsumed: number;
+  keepaUsage?: KeepaUsage;
+};
+
+type ProductRow = {
+  asin: string;
+  amazon_domain: number;
+  parent_asin: string | null;
+  title: string;
+  brand: string | null;
+  model: string | null;
+  color: string | null;
+  size: string | null;
+  image_url: string | null;
+  root_category: number | null;
+  category_ids: number[] | null;
+  category_tree: unknown[] | null;
+};
+
+type SnapshotRow = {
+  asin: string;
+  requested_at: string;
+  last_buy_box_updated_at: string | null;
+  buybox_current_cents: number | null;
+  buybox_price_cents: number | null;
+  buybox_shipping_cents: number | null;
+  buybox_total_cents: number | null;
+  currency: string;
+  buybox_seller_id: string | null;
+  buybox_is_amazon: boolean | null;
+  buybox_is_fba: boolean | null;
+  buybox_is_prime_eligible: boolean | null;
+  buybox_is_prime_exclusive: boolean | null;
+  buybox_is_shippable: boolean | null;
+  buybox_is_preorder: boolean | null;
+  buybox_is_backorder: boolean | null;
+  buybox_availability_message: string | null;
+};
+
+type RawLatestRow = {
+  asin: string;
+  product_object: unknown;
+  requested_at: string;
+};
+
+type StoredLookupData = {
+  product: ProductRow | null;
+  snapshot: SnapshotRow | null;
+  rawLatest: RawLatestRow | null;
+};
+
+function throwForDatabaseError(
+  error: PostgrestError | null,
+  operation: string
+): void {
+  if (error) {
+    throw new Error(`${operation}: ${error.message}`);
+  }
+}
+
+function getTimestampMilliseconds(value: string, fieldName: string): number {
+  const milliseconds = Date.parse(value);
+
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error(`${fieldName} non e un timestamp valido.`);
+  }
+
+  return milliseconds;
+}
+
+function getAgeMinutes(value: string, nowMilliseconds: number): number {
+  const timestampMilliseconds = getTimestampMilliseconds(value, "Timestamp");
+
+  return Math.max(
+    0,
+    Math.floor((nowMilliseconds - timestampMilliseconds) / 60_000)
+  );
+}
+
+function isFreshSnapshot(
+  requestedAt: string,
+  nowMilliseconds: number
+): boolean {
+  const requestedAtMilliseconds = getTimestampMilliseconds(
+    requestedAt,
+    "keepa_snapshots.requested_at"
+  );
+
+  return nowMilliseconds - requestedAtMilliseconds < AFFARIO_KEEPA_CACHE_TTL_MS;
+}
+
+function centsToEuros(value: number | null): number | null {
+  return value === null ? null : value / 100;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readStoredLookupData(
+  asin: string
+): Promise<StoredLookupData> {
+  const supabase = getSupabaseServerClient();
+  const [productResult, snapshotResult, rawLatestResult] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        "asin,amazon_domain,parent_asin,title,brand,model,color,size,image_url,root_category,category_ids,category_tree"
+      )
+      .eq("asin", asin)
+      .maybeSingle(),
+    supabase
+      .from("keepa_snapshots")
+      .select(
+        "asin,requested_at,last_buy_box_updated_at,buybox_current_cents,buybox_price_cents,buybox_shipping_cents,buybox_total_cents,currency,buybox_seller_id,buybox_is_amazon,buybox_is_fba,buybox_is_prime_eligible,buybox_is_prime_exclusive,buybox_is_shippable,buybox_is_preorder,buybox_is_backorder,buybox_availability_message"
+      )
+      .eq("asin", asin)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("keepa_raw_latest")
+      .select("asin,product_object,requested_at")
+      .eq("asin", asin)
+      .maybeSingle(),
+  ]);
+
+  throwForDatabaseError(productResult.error, "Lettura products fallita");
+  throwForDatabaseError(
+    snapshotResult.error,
+    "Lettura ultimo keepa_snapshots fallita"
+  );
+  throwForDatabaseError(
+    rawLatestResult.error,
+    "Lettura keepa_raw_latest fallita"
+  );
+
+  const product = productResult.data as ProductRow | null;
+  const snapshot = snapshotResult.data as SnapshotRow | null;
+  const rawLatest = rawLatestResult.data as RawLatestRow | null;
+
+  if (rawLatest && !isJsonObject(rawLatest.product_object)) {
+    throw new Error("keepa_raw_latest.product_object non e un oggetto JSON.");
+  }
+
+  return { product, snapshot, rawLatest };
+}
+
+function buildLookupResult(
+  storedData: StoredLookupData,
+  source: AffarioProductLookupSource,
+  nowMilliseconds: number,
+  usage?: KeepaUsage
+): AffarioProductLookupResult {
+  const { product, snapshot, rawLatest } = storedData;
+
+  if (!product || !snapshot) {
+    throw new Error("Dati Keepa persistiti incompleti dopo la lookup.");
+  }
+
+  if (rawLatest && rawLatest.asin !== product.asin) {
+    throw new Error("ASIN incoerente in keepa_raw_latest.");
+  }
+
+  const lastBuyBoxUpdate = snapshot.last_buy_box_updated_at;
+  const tokensConsumed = usage?.tokensConsumed ?? 0;
+
+  return {
+    asin: product.asin,
+    product: {
+      asin: product.asin,
+      amazonDomainId: product.amazon_domain,
+      parentAsin: product.parent_asin,
+      title: product.title,
+      brand: product.brand,
+      model: product.model,
+      color: product.color,
+      size: product.size,
+      imageUrl: product.image_url,
+      rootCategory: product.root_category,
+      categoryIds: product.category_ids,
+      categoryTree: product.category_tree,
+    },
+    buyBox: {
+      currentIncludingShippingInEuros: centsToEuros(
+        snapshot.buybox_current_cents
+      ),
+      priceInEuros: centsToEuros(snapshot.buybox_price_cents),
+      shippingInEuros: centsToEuros(snapshot.buybox_shipping_cents),
+      totalInEuros: centsToEuros(snapshot.buybox_total_cents),
+      currency: snapshot.currency,
+      sellerId: snapshot.buybox_seller_id,
+      isAmazon: snapshot.buybox_is_amazon,
+      isFBA: snapshot.buybox_is_fba,
+      isPrimeEligible: snapshot.buybox_is_prime_eligible,
+      isPrimeExclusive: snapshot.buybox_is_prime_exclusive,
+      isShippable: snapshot.buybox_is_shippable,
+      isPreorder: snapshot.buybox_is_preorder,
+      isBackorder: snapshot.buybox_is_backorder,
+      availabilityMessage: snapshot.buybox_availability_message,
+    },
+    currency: snapshot.currency,
+    lastBuyBoxUpdate,
+    buyBoxAgeMinutes:
+      lastBuyBoxUpdate === null
+        ? null
+        : getAgeMinutes(lastBuyBoxUpdate, nowMilliseconds),
+    lastKeepaCheckAt: snapshot.requested_at,
+    lastKeepaCheckAgeMinutes: getAgeMinutes(
+      snapshot.requested_at,
+      nowMilliseconds
+    ),
+    source,
+    cacheHit: source === "DATABASE_CACHE",
+    tokensConsumed,
+    ...(usage ? { keepaUsage: usage } : {}),
+  };
+}
+
+export async function getAffarioProductByAsin(
+  asin: string
+): Promise<AffarioProductLookupResult> {
+  const normalizedAsin = normalizeKeepaAsin(asin);
+  const storedData = await readStoredLookupData(normalizedAsin);
+  const cacheCheckTime = Date.now();
+
+  if (
+    storedData.product &&
+    storedData.snapshot &&
+    isFreshSnapshot(storedData.snapshot.requested_at, cacheCheckTime)
+  ) {
+    return buildLookupResult(
+      storedData,
+      "DATABASE_CACHE",
+      cacheCheckTime
+    );
+  }
+
+  const requestedAt = new Date().toISOString();
+  const keepaResult = await getAffarioProductCandidateByAsin(normalizedAsin);
+
+  await persistKeepaProduct({
+    result: keepaResult,
+    requestedAt,
+  });
+
+  const refreshedStoredData = await readStoredLookupData(normalizedAsin);
+
+  return buildLookupResult(
+    refreshedStoredData,
+    "KEEPA_REFRESH",
+    Date.now(),
+    keepaResult.usage
+  );
+}

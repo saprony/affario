@@ -125,7 +125,7 @@ export class KeepaClientError extends Error {
   }
 }
 
-function normalizeAsin(asin: string): string {
+export function normalizeKeepaAsin(asin: string): string {
   if (typeof asin !== "string") {
     throw new KeepaClientError(
       "L'ASIN deve contenere 10 caratteri alfanumerici.",
@@ -698,7 +698,7 @@ function mapProduct(
 export async function getKeepaProductByAsin(
   asin: string
 ): Promise<KeepaProductResult> {
-  const normalizedAsin = normalizeAsin(asin);
+  const normalizedAsin = normalizeKeepaAsin(asin);
   const apiKey = getApiKey();
   const requestUrl = new URL(KEEPA_PRODUCT_ENDPOINT, KEEPA_BASE_URL);
   requestUrl.searchParams.set("key", apiKey);
