@@ -47,3 +47,14 @@ export type AffarioExternalProductSearchResult = {
   source: "EXTERNAL_PROVIDER";
   candidates: readonly AffarioExternalProductCandidate[];
 };
+
+export type AffarioProductSearchWithFallbackStatus =
+  | "MATCHES_FOUND"
+  | "NO_MATCHES";
+
+export type AffarioProductSearchWithFallbackResult = {
+  query: string;
+  source: "AFFARIO_CATALOG" | "EXTERNAL_PROVIDER";
+  status: AffarioProductSearchWithFallbackStatus;
+  families: readonly AffarioProductSearchFamily[];
+};
