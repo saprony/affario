@@ -1,6 +1,6 @@
 begin;
 
-create or replace function public.affario_set_updated_at()
+create function public.affario_keepa_set_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
@@ -271,23 +271,17 @@ create index if not exists buybox_price_history_asin_observed_at_idx
 create index if not exists keepa_history_points_asin_type_observed_at_idx
   on public.keepa_history_points (asin, data_type, observed_at desc);
 
-drop trigger if exists products_set_updated_at
-  on public.products;
 create trigger products_set_updated_at
 before update on public.products
-for each row execute function public.affario_set_updated_at();
+for each row execute function public.affario_keepa_set_updated_at();
 
-drop trigger if exists product_variants_set_updated_at
-  on public.product_variants;
 create trigger product_variants_set_updated_at
 before update on public.product_variants
-for each row execute function public.affario_set_updated_at();
+for each row execute function public.affario_keepa_set_updated_at();
 
-drop trigger if exists keepa_raw_latest_set_updated_at
-  on public.keepa_raw_latest;
 create trigger keepa_raw_latest_set_updated_at
 before update on public.keepa_raw_latest
-for each row execute function public.affario_set_updated_at();
+for each row execute function public.affario_keepa_set_updated_at();
 
 alter table public.products enable row level security;
 alter table public.product_variants enable row level security;
@@ -318,7 +312,7 @@ grant usage, select on sequence public.product_variants_id_seq to service_role;
 grant usage, select on sequence public.keepa_snapshots_id_seq to service_role;
 grant usage, select on sequence public.keepa_history_points_id_seq to service_role;
 
-revoke execute on function public.affario_set_updated_at()
+revoke execute on function public.affario_keepa_set_updated_at()
   from public, anon, authenticated;
 
 comment on table public.products is
