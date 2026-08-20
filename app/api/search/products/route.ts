@@ -6,9 +6,9 @@ import {
 } from "@/lib/affarioProductSearch";
 import {
   AffarioProductSearchServiceError,
-  searchAffarioProducts,
 } from "@/services/affarioProductSearch";
-import type { AffarioProductSearchResult } from "@/types/productSearch";
+import { searchAffarioProductsWithFallback } from "@/services/affarioProductSearchWithFallback";
+import type { AffarioProductSearchWithFallbackResult } from "@/types/productSearch";
 
 export type AffarioProductSearchApiErrorCode =
   | AffarioProductSearchInputErrorCode
@@ -20,6 +20,10 @@ export type AffarioProductSearchApiErrorResponse = {
     code: AffarioProductSearchApiErrorCode;
     message: string;
   };
+};
+
+export type AffarioProductSearchApiSuccessResponse = {
+  data: AffarioProductSearchWithFallbackResult;
 };
 
 function errorResponse(
@@ -66,13 +70,16 @@ export async function GET(
   request: Request
 ): Promise<
   NextResponse<
-    AffarioProductSearchResult | AffarioProductSearchApiErrorResponse
+    | AffarioProductSearchApiSuccessResponse
+    | AffarioProductSearchApiErrorResponse
   >
 > {
   const query = new URL(request.url).searchParams.get("q") ?? "";
 
   try {
-    return NextResponse.json(await searchAffarioProducts(query));
+    const { data } = await searchAffarioProductsWithFallback(query);
+
+    return NextResponse.json({ data });
   } catch (error) {
     return mapError(error);
   }

@@ -25,10 +25,10 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Working tree iniziale del checkpoint documentale: pulito.
-- HEAD: `1acda79b9aa7e95614cb7be316a43f55909c3d5b` — `feat: add Keepa product search provider`.
-- Al momento del checkpoint, `master` è un commit ahead rispetto a `origin/master`: la Funzione 035 può essere ancora solo locale.
-- Ultima funzione completata: **FUNZIONE 035**.
-- FUNZIONE 036: **non avviata**.
+- HEAD: `b6778d87bc9de08958802cb7ed1256032d188df8` — `feat: add local-first product search fallback`.
+- Prima della chiusura Git della Funzione 037, `master` è un commit ahead rispetto a `origin/master`: la Funzione 036 è ancora solo locale.
+- Ultima funzione completata: **FUNZIONE 037**, validata manualmente in locale.
+- La funzione successiva alla 037 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -106,14 +106,16 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 
 ### 6.2 Ricerca e ingresso prodotto reali
 
-- `GET /api/search/products?q=...` esegue ricerca naturale sul solo catalogo Supabase AFFARIO.
-- Il servizio pubblico è `searchAffarioProducts(query)`.
+- Dalla Funzione 037, `GET /api/search/products?q=...` è collegato all'orchestratore local-first e restituisce soltanto il DTO pubblico AFFARIO.
+- Il servizio locale è `searchAffarioProducts(query)`.
+- L'orchestratore server-side `searchAffarioProductsWithFallback(query)` applica il flusso local-first: catalogo AFFARIO e, soltanto senza risultati locali, fallback al provider esterno.
 - La ricerca normalizza e tokenizza, applica ranking leggibile, raggruppa per `parentAsin` e ricompone una variante per ASIN con il proprio insieme di attributi.
 - Il flusso previsto è: **query → candidati → famiglia → variante → ASIN**.
 - L'utente non deve conoscere l'ASIN o il titolo Amazon completo.
-- Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES` e non chiama automaticamente provider esterni.
+- Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES`; nell'orchestratore questo esito attiva il fallback provider esterno.
 - Esiste un provider server-only per la ricerca keyword Keepa e la trasformazione dei Product Object in candidati AFFARIO provider-agnostic.
-- Il provider Keepa serve esclusivamente alla scoperta di prodotti non presenti nel catalogo locale: non è collegato automaticamente a `GET /api/search/products` e non dispone di un endpoint pubblico.
+- Il provider Keepa serve esclusivamente alla scoperta di prodotti non presenti nel catalogo locale: è raggiungibile soltanto tramite l'orchestratore server-side e non dispone di un endpoint pubblico proprio.
+- Il ranking esterno assegna forte priorità al match reale del brand, senza blacklist o brand hardcodati.
 - `GET /api/products/[asin]` è il primo ingresso applicativo reale per un ASIN valido.
 - La lookup pubblica restituisce un DTO AFFARIO sicuro, non raw Keepa.
 
@@ -255,8 +257,10 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 033 | API prodotto per ASIN — commit `1ade21f045b3c2ab7c92a600c1cecb436a46ee19` |
 | 034 | Ricerca locale AFFARIO — commit `8e25dc28cb86009ccea4715e7b3dd19f5bb1cfe7` |
 | 035 | Provider server-side per ricerca keyword Keepa — commit `1acda79b9aa7e95614cb7be316a43f55909c3d5b` |
+| 036 | Ricerca local-first con fallback provider esterno — commit `b6778d87bc9de08958802cb7ed1256032d188df8` |
+| 037 | API ricerca collegata all'orchestratore local-first, validata manualmente in locale |
 
-Totale associazioni registrate: **27**.
+Totale associazioni registrate: **29**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -271,7 +275,7 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 - Cache reale verificata: primo refresh 3 token; richieste successive entro TTL 0 token.
 - Provider ricerca keyword server-only operativo: `domain=8`, una singola richiesta Keepa, massimo 10 candidati AFFARIO conservati e nessun endpoint pubblico.
 - Test reale `dreame matrix`: 1 chiamata Keepa, costo reale 10 token, 20 risultati Keepa ricevuti e 10 candidati AFFARIO conservati.
-- Nei risultati del test è stato rilevato rumore: un accessorio e un prodotto concorrente. Il provider preserva l'ordine Keepa e non introduce ancora ranking o filtri proprietari.
+- Nei risultati del test è stato rilevato rumore: un accessorio e un prodotto concorrente. Il ranking AFFARIO esterno corregge questo rumore con forte priorità al match reale del brand e mantiene la famiglia Matrix10 Ultra/Pro come più rilevante.
 - La ricerca keyword non accede a Supabase e non persiste prodotti, varianti, snapshot o risultati.
 
 ### 9.2 Catalogo e primo prodotto reale
@@ -281,7 +285,12 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 - Catalogo locale AFFARIO operativo.
 - Ricerche verificate: `iphone`, `iphone 17`, `apple iphone 256`, ASIN esatto.
 - La famiglia iPhone è raggruppata per parent ASIN e le righe attributo sono deduplicate in varianti complete.
-- `dreame matrix` restituisce correttamente `NO_LOCAL_MATCHES`, HTTP 200, senza chiamare Keepa.
+- Nel test local-first, `iphone` è risolto dal catalogo AFFARIO con zero chiamate e zero token Keepa.
+- Nel test di fallback, `dreame matrix` ha eseguito una ricerca Keepa per 10 token; la famiglia Matrix10 Ultra/Pro è risultata la più rilevante.
+- Validazione manuale della Funzione 037:
+  - `GET /api/search/products?q=iphone`: `AFFARIO_CATALOG`, `MATCHES_FOUND`, una famiglia e 9 varianti;
+  - `GET /api/search/products?q=a`: `QUERY_TOO_SHORT`;
+  - `GET /api/search/products?q=dreame%20matrix`: `EXTERNAL_PROVIDER`, `MATCHES_FOUND`, famiglia Matrix10 Ultra/Pro al primo posto, altri prodotti Dreame successivi, accessorio Homruich in fondo ed ECOVACS escluso; nessun `serverReport`, token o diagnostica interna esposti.
 
 ## 10. Uso futuro della capacità Keepa
 
@@ -378,7 +387,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - **“Migliore offerta idonea generica” come prezzo corrente principale** → sostituita da Buy Box / Featured Offer dell'ASIN.
 - **`history=0`** → rimosso nella Funzione 028; lo storico è incluso.
 - **“Keepa non collegato”** → superato: client, adapter, persistenza, cache e API prodotto sono operativi.
-- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 035.
+- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 037.
 
 ## 16. Questioni aperte e ambiguità
 
@@ -391,9 +400,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **035**.
-- Commit locale della Funzione 035: `1acda79b9aa7e95614cb7be316a43f55909c3d5b`.
-- FUNZIONE 036: **non ancora avviata**.
-- Prima di avviarla: leggere questo documento e verificare Git.
+- Ultima funzione completata: **037**, validata manualmente in locale.
+- La funzione successiva alla 037 non è ancora avviata.
 
-Questo checkpoint è solo documentale: non modifica comportamento applicativo, database, provider o deploy.
+La Funzione 037 modifica la route API e lo stato canonico; frontend, database, provider e deploy restano invariati.
