@@ -25,10 +25,10 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Working tree iniziale del checkpoint documentale: pulito.
-- HEAD: `8e25dc28cb86009ccea4715e7b3dd19f5bb1cfe7` — `feat: add local product search`.
-- Al momento del checkpoint, `master` è un commit ahead rispetto a `origin/master`: la Funzione 034 può essere ancora solo locale.
-- Ultima funzione completata: **FUNZIONE 034**.
-- FUNZIONE 035: **non definita e non avviata**.
+- HEAD: `1acda79b9aa7e95614cb7be316a43f55909c3d5b` — `feat: add Keepa product search provider`.
+- Al momento del checkpoint, `master` è un commit ahead rispetto a `origin/master`: la Funzione 035 può essere ancora solo locale.
+- Ultima funzione completata: **FUNZIONE 035**.
+- FUNZIONE 036: **non avviata**.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -112,6 +112,8 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Il flusso previsto è: **query → candidati → famiglia → variante → ASIN**.
 - L'utente non deve conoscere l'ASIN o il titolo Amazon completo.
 - Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES` e non chiama automaticamente provider esterni.
+- Esiste un provider server-only per la ricerca keyword Keepa e la trasformazione dei Product Object in candidati AFFARIO provider-agnostic.
+- Il provider Keepa serve esclusivamente alla scoperta di prodotti non presenti nel catalogo locale: non è collegato automaticamente a `GET /api/search/products` e non dispone di un endpoint pubblico.
 - `GET /api/products/[asin]` è il primo ingresso applicativo reale per un ASIN valido.
 - La lookup pubblica restituisce un DTO AFFARIO sicuro, non raw Keepa.
 
@@ -252,8 +254,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 032 | Cache Keepa a 60 minuti — commit `1b8300e93796ca0657642f22b8bfa0b3693bfbd3` |
 | 033 | API prodotto per ASIN — commit `1ade21f045b3c2ab7c92a600c1cecb436a46ee19` |
 | 034 | Ricerca locale AFFARIO — commit `8e25dc28cb86009ccea4715e7b3dd19f5bb1cfe7` |
+| 035 | Provider server-side per ricerca keyword Keepa — commit `1acda79b9aa7e95614cb7be316a43f55909c3d5b` |
 
-Totale associazioni registrate: **26**.
+Totale associazioni registrate: **27**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -266,6 +269,10 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 - Richiesta prodotto corrente: `domain=8`, `stats=90`, `buybox=1`, storico incluso, nessun `offers`.
 - Costo tipico di un refresh prodotto: 3 token.
 - Cache reale verificata: primo refresh 3 token; richieste successive entro TTL 0 token.
+- Provider ricerca keyword server-only operativo: `domain=8`, una singola richiesta Keepa, massimo 10 candidati AFFARIO conservati e nessun endpoint pubblico.
+- Test reale `dreame matrix`: 1 chiamata Keepa, costo reale 10 token, 20 risultati Keepa ricevuti e 10 candidati AFFARIO conservati.
+- Nei risultati del test è stato rilevato rumore: un accessorio e un prodotto concorrente. Il provider preserva l'ordine Keepa e non introduce ancora ranking o filtri proprietari.
+- La ricerca keyword non accede a Supabase e non persiste prodotti, varianti, snapshot o risultati.
 
 ### 9.2 Catalogo e primo prodotto reale
 
@@ -276,7 +283,9 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 - La famiglia iPhone è raggruppata per parent ASIN e le righe attributo sono deduplicate in varianti complete.
 - `dreame matrix` restituisce correttamente `NO_LOCAL_MATCHES`, HTTP 200, senza chiamare Keepa.
 
-## 10. Scheduler alert futuro
+## 10. Uso futuro della capacità Keepa
+
+### 10.1 Scheduler alert futuro
 
 Direzione già stabilita, non ancora implementata:
 
@@ -290,6 +299,20 @@ Direzione già stabilita, non ancora implementata:
 - progettare una protezione cross-instance prima di traffico elevato.
 
 La deduplicazione definitiva distribuita non è implementata.
+
+### 10.2 Decisione roadmap — prefetch/catalogo caldo futuro
+
+Questa è una direzione futura e **non una funzione già implementata**.
+
+Usare la capacità Keepa inutilizzata nelle ore di basso traffico per pre-popolare in modo selettivo il catalogo AFFARIO, partendo dalle cinque categorie V1:
+
+- Smartphone;
+- Gaming & Informatica;
+- Audio & Wearable;
+- Beauty & Cura persona;
+- Pet & Cura animale.
+
+Dare priorità a brand, modelli e prodotti ad alta probabilità di ricerca. Non effettuare crawling indiscriminato e mantenere sempre una riserva di token per richieste degli utenti e alert.
 
 ## 11. Compliance Keepa e Amazon
 
@@ -355,7 +378,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - **“Migliore offerta idonea generica” come prezzo corrente principale** → sostituita da Buy Box / Featured Offer dell'ASIN.
 - **`history=0`** → rimosso nella Funzione 028; lo storico è incluso.
 - **“Keepa non collegato”** → superato: client, adapter, persistenza, cache e API prodotto sono operativi.
-- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 034.
+- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 035.
 
 ## 16. Questioni aperte e ambiguità
 
@@ -368,9 +391,9 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **034**.
-- Commit locale della Funzione 034: `8e25dc28cb86009ccea4715e7b3dd19f5bb1cfe7`.
-- FUNZIONE 035: **non ancora definita o avviata**.
-- Prima di definirla: leggere questo documento e verificare Git.
+- Ultima funzione completata: **035**.
+- Commit locale della Funzione 035: `1acda79b9aa7e95614cb7be316a43f55909c3d5b`.
+- FUNZIONE 036: **non ancora avviata**.
+- Prima di avviarla: leggere questo documento e verificare Git.
 
 Questo checkpoint è solo documentale: non modifica comportamento applicativo, database, provider o deploy.
