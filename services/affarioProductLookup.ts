@@ -51,10 +51,17 @@ export type AffarioLookupBuyBox = {
   availabilityMessage: string | null;
 };
 
+export type AffarioLookupBuyBox90Days = {
+  averageInEuros: number | null;
+  minimumInEuros: number | null;
+  minimumObservedAt: string | null;
+};
+
 export type AffarioProductLookupResult = {
   asin: string;
   product: AffarioLookupProduct;
   buyBox: AffarioLookupBuyBox;
+  buyBox90Days: AffarioLookupBuyBox90Days;
   currency: string;
   lastBuyBoxUpdate: string | null;
   buyBoxAgeMinutes: number | null;
@@ -65,6 +72,16 @@ export type AffarioProductLookupResult = {
   tokensConsumed: number;
   keepaUsage?: KeepaUsage;
 };
+
+export class AffarioProductLookupError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "DATABASE_UNAVAILABLE"
+  ) {
+    super(message);
+    this.name = "AffarioProductLookupError";
+  }
+}
 
 type ProductRow = {
   asin: string;
@@ -99,6 +116,9 @@ type SnapshotRow = {
   buybox_is_preorder: boolean | null;
   buybox_is_backorder: boolean | null;
   buybox_availability_message: string | null;
+  avg90_cents: number | null;
+  min90_cents: number | null;
+  min90_observed_at: string | null;
 };
 
 type RawLatestRow = {
@@ -118,7 +138,10 @@ function throwForDatabaseError(
   operation: string
 ): void {
   if (error) {
-    throw new Error(`${operation}: ${error.message}`);
+    throw new AffarioProductLookupError(
+      `${operation}: ${error.message}`,
+      "DATABASE_UNAVAILABLE"
+    );
   }
 }
 
@@ -164,7 +187,17 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 async function readStoredLookupData(
   asin: string
 ): Promise<StoredLookupData> {
-  const supabase = getSupabaseServerClient();
+  let supabase: ReturnType<typeof getSupabaseServerClient>;
+
+  try {
+    supabase = getSupabaseServerClient();
+  } catch {
+    throw new AffarioProductLookupError(
+      "Configurazione database non disponibile.",
+      "DATABASE_UNAVAILABLE"
+    );
+  }
+
   const [productResult, snapshotResult, rawLatestResult] = await Promise.all([
     supabase
       .from("products")
@@ -176,7 +209,7 @@ async function readStoredLookupData(
     supabase
       .from("keepa_snapshots")
       .select(
-        "asin,requested_at,last_buy_box_updated_at,buybox_current_cents,buybox_price_cents,buybox_shipping_cents,buybox_total_cents,currency,buybox_seller_id,buybox_is_amazon,buybox_is_fba,buybox_is_prime_eligible,buybox_is_prime_exclusive,buybox_is_shippable,buybox_is_preorder,buybox_is_backorder,buybox_availability_message"
+        "asin,requested_at,last_buy_box_updated_at,buybox_current_cents,buybox_price_cents,buybox_shipping_cents,buybox_total_cents,currency,buybox_seller_id,buybox_is_amazon,buybox_is_fba,buybox_is_prime_eligible,buybox_is_prime_exclusive,buybox_is_shippable,buybox_is_preorder,buybox_is_backorder,buybox_availability_message,avg90_cents,min90_cents,min90_observed_at"
       )
       .eq("asin", asin)
       .order("requested_at", { ascending: false })
@@ -263,6 +296,11 @@ function buildLookupResult(
       isBackorder: snapshot.buybox_is_backorder,
       availabilityMessage: snapshot.buybox_availability_message,
     },
+    buyBox90Days: {
+      averageInEuros: centsToEuros(snapshot.avg90_cents),
+      minimumInEuros: centsToEuros(snapshot.min90_cents),
+      minimumObservedAt: snapshot.min90_observed_at,
+    },
     currency: snapshot.currency,
     lastBuyBoxUpdate,
     buyBoxAgeMinutes:
@@ -303,10 +341,17 @@ export async function getAffarioProductByAsin(
   const requestedAt = new Date().toISOString();
   const keepaResult = await getAffarioProductCandidateByAsin(normalizedAsin);
 
-  await persistKeepaProduct({
-    result: keepaResult,
-    requestedAt,
-  });
+  try {
+    await persistKeepaProduct({
+      result: keepaResult,
+      requestedAt,
+    });
+  } catch {
+    throw new AffarioProductLookupError(
+      "Persistenza dati Keepa non disponibile.",
+      "DATABASE_UNAVAILABLE"
+    );
+  }
 
   const refreshedStoredData = await readStoredLookupData(normalizedAsin);
 
