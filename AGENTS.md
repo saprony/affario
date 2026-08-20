@@ -160,23 +160,35 @@ Non sacrificare l'usabilità mobile per miglioramenti desktop.
 
 ## 9. Ricerca prodotti — stato attuale
 
-La ricerca attuale utilizza il catalogo locale:
+La demo frontend in components/DemoHome.tsx continua a utilizzare il catalogo demo:
 
 data/products.ts
 
-La ricerca filtra attualmente per:
+La ricerca della demo filtra per:
 
 - titolo;
 - marca;
 - categoria.
 
-Il catalogo locale è PROVVISORIO.
+Il catalogo demo è PROVVISORIO.
 
 Non considerare data/products.ts un database di produzione.
+
+Il backend reale dispone della ricerca locale AFFARIO sul catalogo Supabase:
+
+GET /api/search/products?q=...
+
+La lookup prodotto reale per ASIN è:
+
+GET /api/products/[asin]
 
 La futura sorgente dei prodotti potrà essere un database o un servizio/API esterno.
 
 Non implementare integrazioni esterne se non richiesto.
+
+Per lo stato architetturale corrente fare riferimento a:
+
+docs/AFFARIO_PROJECT_STATE.md
 
 
 ## 10. Analisi prodotto
