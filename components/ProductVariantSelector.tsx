@@ -1,107 +1,189 @@
 "use client";
 
-import { useState } from "react";
-import { Product } from "@/types/product";
+import { useMemo, useState } from "react";
+import {
+  createInitialVariantSelection,
+  findVariantForSelection,
+  getAvailableVariantAttributeValues,
+  getDisplayFamilyTitle,
+  getVariantDescription,
+  getVariantDimensionLabel,
+  getVariantDimensions,
+  type VariantSelection,
+} from "@/lib/productVariantSelection";
+import type { AffarioProductSearchFamily } from "@/types/productSearch";
 
 type ProductVariantSelectorProps = {
-  familyTitle: string;
-  products: Product[];
-  initialProduct: Product | null;
-  onSelectProduct: (product: Product) => void;
+  family: AffarioProductSearchFamily;
+  query: string;
+  selectedAsin: string | null;
+  onSelectVariant: (familyId: string, asin: string | null) => void;
 };
 
 export default function ProductVariantSelector({
-  familyTitle,
-  products,
-  initialProduct,
-  onSelectProduct,
+  family,
+  query,
+  selectedAsin,
+  onSelectVariant,
 }: ProductVariantSelectorProps) {
-  const [selectedMemory, setSelectedMemory] = useState<string | null>(
-    initialProduct?.memory ?? null
+  const dimensions = useMemo(
+    () => getVariantDimensions(family.variants),
+    [family.variants]
   );
-  const [selectedColor, setSelectedColor] = useState<string | null>(
-    initialProduct?.color ?? null
+  const displayTitle = useMemo(
+    () => getDisplayFamilyTitle(family.title, family.variants),
+    [family.title, family.variants]
+  );
+  const [selection, setSelection] = useState<VariantSelection>(() =>
+    createInitialVariantSelection(query, family.variants, dimensions)
+  );
+  const selectedVariant = findVariantForSelection(
+    family.variants,
+    dimensions,
+    selection
   );
 
-  const memories = Array.from(
-    new Set(products.map((product) => product.memory))
-  );
-  const productsForMemory = selectedMemory
-    ? products.filter((product) => product.memory === selectedMemory)
-    : [];
-  const colors = Array.from(
-    new Set(productsForMemory.map((product) => product.color))
-  );
-  const selectedProduct =
-    selectedMemory && selectedColor
-      ? products.find(
-          (product) =>
-            product.memory === selectedMemory && product.color === selectedColor
-        ) ?? null
-      : null;
+  function handleAttributeSelect(
+    dimension: string,
+    value: string,
+    dimensionIndex: number
+  ) {
+    setSelection((current) => {
+      const nextSelection: Record<string, string> = {};
 
-  function handleMemorySelect(memory: string) {
-    const availableColors = products
-      .filter((product) => product.memory === memory)
-      .map((product) => product.color);
-    const nextColor =
-      selectedColor && availableColors.includes(selectedColor)
-        ? selectedColor
-        : null;
+      for (let index = 0; index < dimensionIndex; index += 1) {
+        const previousDimension = dimensions[index];
+        const previousValue = current[previousDimension];
 
-    setSelectedMemory(memory);
-    setSelectedColor(nextColor);
+        if (previousValue) {
+          nextSelection[previousDimension] = previousValue;
+        }
+      }
+
+      nextSelection[dimension] = value;
+      return nextSelection;
+    });
+    onSelectVariant(family.familyId, null);
   }
 
   return (
     <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md sm:p-6">
-      <h3 className="text-xl font-black text-gray-900">{familyTitle}</h3>
-
-      <fieldset className="mt-5">
-        <legend className="font-bold text-gray-700">Memoria</legend>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {memories.map((memory) => {
-            const isSelected = memory === selectedMemory;
-
-            return (
-              <button
-                key={memory}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => handleMemorySelect(memory)}
-                className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition ${
-                  isSelected
-                    ? "border-green-600 bg-green-600 text-white"
-                    : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
-                }`}
-              >
-                {memory}
-              </button>
-            );
-          })}
+      <div className="grid gap-5 sm:grid-cols-[8rem_1fr] sm:items-start">
+        <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-slate-50 p-3">
+          {family.imageUrl ? (
+            // The public DTO can contain different provider image hosts.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={family.imageUrl}
+              alt={displayTitle}
+              className="h-full w-full object-contain"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span className="text-center text-sm font-bold text-gray-400">
+              Immagine non disponibile
+            </span>
+          )}
         </div>
-      </fieldset>
 
-      {selectedMemory && (
+        <div>
+          <h3 className="text-xl font-black text-gray-900">{displayTitle}</h3>
+
+          {family.brand && <p className="mt-2 text-gray-600">{family.brand}</p>}
+
+          <p className="mt-2 text-sm font-bold text-gray-500">
+            {family.variants.length === 1
+              ? "1 variante disponibile"
+              : `${family.variants.length} varianti disponibili`}
+          </p>
+        </div>
+      </div>
+
+      {dimensions.map((dimension, dimensionIndex) => {
+        const previousDimensions = dimensions.slice(0, dimensionIndex);
+        const canChoose = previousDimensions.every(
+          (previousDimension) => selection[previousDimension]
+        );
+
+        if (!canChoose) {
+          return null;
+        }
+
+        const requiredSelection = Object.fromEntries(
+          previousDimensions
+            .filter((previousDimension) => selection[previousDimension])
+            .map((previousDimension) => [
+              previousDimension,
+              selection[previousDimension],
+            ])
+        );
+        const values = getAvailableVariantAttributeValues(
+          family.variants,
+          dimension,
+          requiredSelection
+        );
+
+        return (
+          <fieldset className="mt-5" key={dimension}>
+            <legend className="font-bold text-gray-700">
+              {getVariantDimensionLabel(dimension)}
+            </legend>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {values.map((value) => {
+                const isSelected = selection[dimension] === value;
+
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() =>
+                      handleAttributeSelect(dimension, value, dimensionIndex)
+                    }
+                    className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition ${
+                      isSelected
+                        ? "border-green-600 bg-green-600 text-white"
+                        : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
+                    }`}
+                  >
+                    {value}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        );
+      })}
+
+      {dimensions.length === 0 && (
         <fieldset className="mt-5">
-          <legend className="font-bold text-gray-700">Colore</legend>
+          <legend className="font-bold text-gray-700">
+            Varianti disponibili
+          </legend>
           <div className="mt-3 flex flex-wrap gap-2">
-            {colors.map((color) => {
-              const isSelected = color === selectedColor;
+            {family.variants.map((variant, index) => {
+              const isSelected = selectedAsin === variant.asin;
+              const label =
+                family.variants.length === 1
+                  ? "Unica variante disponibile"
+                  : `Variante ${index + 1}`;
 
               return (
                 <button
-                  key={color}
+                  key={variant.asin}
                   type="button"
                   aria-pressed={isSelected}
-                  onClick={() => setSelectedColor(color)}
+                  onClick={() =>
+                    onSelectVariant(family.familyId, variant.asin)
+                  }
                   className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition ${
                     isSelected
-                      ? "border-green-600 bg-green-50 text-green-800"
+                      ? "border-green-600 bg-green-600 text-white"
                       : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
                   }`}
                 >
-                  {color}
+                  {label}
                 </button>
               );
             })}
@@ -109,26 +191,33 @@ export default function ProductVariantSelector({
         </fieldset>
       )}
 
-      {selectedProduct && (
+      {selectedVariant && (
         <div className="mt-6 rounded-2xl bg-slate-50 p-4 sm:flex sm:items-end sm:justify-between sm:gap-5">
           <div>
             <p className="text-sm font-bold text-gray-500">
-              Variante selezionata
+              Variante individuata
             </p>
             <p className="mt-1 font-bold text-gray-900">
-              {selectedProduct.title}
+              {getVariantDescription(selectedVariant)}
             </p>
-            <p className="mt-2 text-2xl font-black text-green-600">
-              € {selectedProduct.currentPrice.toLocaleString("it-IT")}
-            </p>
+            {selectedAsin === selectedVariant.asin && (
+              <p className="mt-2 font-bold text-green-700">
+                Variante selezionata correttamente.
+              </p>
+            )}
           </div>
 
           <button
             type="button"
-            onClick={() => onSelectProduct(selectedProduct)}
+            aria-pressed={selectedAsin === selectedVariant.asin}
+            onClick={() =>
+              onSelectVariant(family.familyId, selectedVariant.asin)
+            }
             className="mt-4 w-full rounded-xl bg-green-600 px-5 py-3 font-extrabold text-white sm:mt-0 sm:w-auto"
           >
-            Analizza il prezzo
+            {selectedAsin === selectedVariant.asin
+              ? "Variante selezionata"
+              : "Seleziona questa variante"}
           </button>
         </div>
       )}

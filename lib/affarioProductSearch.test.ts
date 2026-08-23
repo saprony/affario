@@ -6,12 +6,12 @@ import {
   prepareAffarioProductSearchQuery,
   rankAffarioExternalProductFamilies,
   rankAffarioProductFamilies,
-} from "@/lib/affarioProductSearch";
+} from "./affarioProductSearch";
 import type {
   AffarioExternalProductCandidate,
   AffarioProductSearchFamily,
   AffarioProductSearchVariant,
-} from "@/types/productSearch";
+} from "../types/productSearch";
 
 function variant(
   asin: string,
@@ -48,15 +48,18 @@ function candidate({
   };
 }
 
-test("ranking esterno privilegia il brand reale senza blacklist", () => {
+test("ranking esterno conserva solo i match completi quando disponibili", () => {
   const matrixVariants = [
     variant("B0GKP9H2W1", "Matrix10 Ultra"),
     variant("B0H1JC29D3", "Matrix10 Pro"),
+    variant("B0L40SPRO1", "L40s Pro Ultra"),
+    variant("B0L50SPRO1", "L50s Pro Ultra"),
   ];
   const candidates = [
     candidate({
       asin: "B0GKP9H2W1",
-      title: "dreame Matrix10 Ultra Robot Aspirapolvere Lavapavimenti",
+      title:
+        "dreame Matrix10 Ultra Robot Aspirapolvere Lavapavimenti, Aspir. 30.000 Pa",
       brand: "dreame",
       model: "RLX95CE",
       parentAsin: "B0GVP55112",
@@ -67,6 +70,22 @@ test("ranking esterno privilegia il brand reale senza blacklist", () => {
       title: "dreame Matrix10 Pro Robot Aspirapolvere Lavapavimenti",
       brand: "dreame",
       model: "RLM61HE",
+      parentAsin: "B0GVP55112",
+      variants: matrixVariants,
+    }),
+    candidate({
+      asin: "B0L40SPRO1",
+      title: "dreame L40s Pro Ultra Robot Aspirapolvere",
+      brand: "dreame",
+      model: "L40S",
+      parentAsin: "B0GVP55112",
+      variants: matrixVariants,
+    }),
+    candidate({
+      asin: "B0L50SPRO1",
+      title: "dreame L50s Pro Ultra Robot Aspirapolvere",
+      brand: "dreame",
+      model: "L50S",
       parentAsin: "B0GVP55112",
       variants: matrixVariants,
     }),
@@ -96,17 +115,83 @@ test("ranking esterno privilegia il brand reale senza blacklist", () => {
     prepareAffarioProductSearchQuery("dreame matrix"),
     families
   );
-  const familyIds = ranked.map((family) => family.familyId);
-
-  assert.deepEqual(familyIds, [
-    "B0GVP55112",
-    "B0DWXTTXND",
-    "B0G1SM4VHK",
-  ]);
   assert.deepEqual(
-    ranked[0].variants.map(({ asin }) => asin),
-    ["B0GKP9H2W1", "B0H1JC29D3"]
+    ranked.map((family) => family.title),
+    [
+      "dreame Matrix10 Ultra Robot Aspirapolvere Lavapavimenti, Aspir. 30.000 Pa",
+      "Accessori per Dreame L40s Pro Ultra Matrix 10 Ultra",
+    ]
   );
+  assert.deepEqual(
+    ranked[0].variants.map(({ attributes }) => attributes.Style),
+    ["Matrix10 Ultra", "Matrix10 Pro"]
+  );
+  assert.equal(
+    ranked[0].variants.some(({ attributes }) =>
+      /L40|L50/i.test(attributes.Style)
+    ),
+    false
+  );
+});
+
+test("suddivide Style diversi senza dipendere da marchi o modelli noti", () => {
+  const variants = [
+    variant("GENERIC-A1", "Alpha20 Standard"),
+    variant("GENERIC-A2", "Alpha20 Plus"),
+    variant("GENERIC-B1", "Beta30 Max"),
+  ];
+  const families = groupAffarioExternalProductCandidates([
+    candidate({
+      asin: "GENERIC-A1",
+      title: "Example Alpha20 Standard",
+      brand: "Example",
+      model: "A20",
+      parentAsin: "GENERIC-PARENT",
+      variants,
+    }),
+    candidate({
+      asin: "GENERIC-B1",
+      title: "Example Beta30 Max",
+      brand: "Example",
+      model: "B30",
+      parentAsin: "GENERIC-PARENT",
+      variants,
+    }),
+  ]);
+
+  assert.deepEqual(
+    families.map(({ variants: familyVariants }) =>
+      familyVariants.map(({ attributes }) => attributes.Style)
+    ),
+    [["Alpha20 Standard", "Alpha20 Plus"], ["Beta30 Max"]]
+  );
+});
+
+test("la famiglia locale iPhone resta unica con nove varianti", () => {
+  const variants = Array.from({ length: 9 }, (_, index) => ({
+    asin: `IPHONE-${index + 1}`,
+    attributes: {
+      Size: ["256 GB", "512 GB", "1 TB"][Math.floor(index / 3)],
+      Color: ["Argento", "Blu profondo", "Arancione cosmico"][index % 3],
+    },
+  }));
+  const family: AffarioProductSearchFamily = {
+    familyId: "IPHONE-PARENT",
+    title: "Apple iPhone 17 Pro",
+    brand: "Apple",
+    model: "IPHONE17PRO",
+    imageUrl: null,
+    representativeAsin: "IPHONE-1",
+    parentAsin: "IPHONE-PARENT",
+    variants,
+  };
+  const ranked = rankAffarioProductFamilies(
+    prepareAffarioProductSearchQuery("iphone"),
+    [family]
+  );
+
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].variants.length, 9);
 });
 
 test("ranking locale conserva la priorita dell'ASIN esatto", () => {

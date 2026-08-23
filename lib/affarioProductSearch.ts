@@ -2,7 +2,7 @@ import type {
   AffarioExternalProductCandidate,
   AffarioProductSearchFamily,
   AffarioProductSearchVariant,
-} from "@/types/productSearch";
+} from "../types/productSearch";
 
 export const AFFARIO_PRODUCT_SEARCH_MIN_QUERY_LENGTH = 2;
 export const AFFARIO_PRODUCT_SEARCH_MAX_QUERY_LENGTH = 100;
@@ -61,6 +61,7 @@ type ScoredFamily = {
 
 type ScoredExternalFamily = ScoredFamily & {
   providerIndex: number;
+  allSignificantTokensMatch: boolean;
 };
 
 type ExternalAttribute = {
@@ -296,10 +297,148 @@ function mergeExternalAttributes(
   }
 }
 
+function getExternalVariantStyle(
+  variant: AffarioProductSearchVariant
+): string | null {
+  const entry = Object.entries(variant.attributes).find(
+    ([dimension]) => getAttributeKey(dimension) === "style"
+  );
+
+  return entry?.[1].trim() || null;
+}
+
+function getStyleFamilyKey(style: string, brand: string | null): string {
+  const brandTokens = getTokens(brand);
+  const styleTokens = normalizeAffarioProductSearchText(style)
+    .split(" ")
+    .filter((token) => token && !brandTokens.has(token));
+  const alphaNumericModelToken = styleTokens.find(
+    (token) => /\p{L}/u.test(token) && /\p{N}/u.test(token)
+  );
+
+  if (alphaNumericModelToken) {
+    return alphaNumericModelToken;
+  }
+
+  const numericTokenIndex = styleTokens.findIndex((token) => /^\d/u.test(token));
+
+  if (numericTokenIndex > 0) {
+    return styleTokens.slice(0, numericTokenIndex + 1).join("");
+  }
+
+  return styleTokens.slice(0, 2).join("-");
+}
+
+function getStyleFamilyTitle(
+  brand: string | null,
+  style: string
+): string {
+  const normalizedBrand = brand
+    ? normalizeAffarioProductSearchText(brand)
+    : "";
+  const normalizedStyle = normalizeAffarioProductSearchText(style);
+
+  if (
+    normalizedBrand &&
+    (` ${normalizedStyle} `).startsWith(` ${normalizedBrand} `)
+  ) {
+    return style.trim();
+  }
+
+  return [brand?.trim(), style.trim()].filter(Boolean).join(" ");
+}
+
+function splitExternalFamilyByStyle(
+  family: AffarioProductSearchFamily,
+  candidatesByAsin: ReadonlyMap<string, AffarioExternalProductCandidate>
+): AffarioProductSearchFamily[] {
+  const styleGroups = new Map<
+    string,
+    {
+      variants: AffarioProductSearchVariant[];
+      representativeStyle: string;
+    }
+  >();
+  const unclassifiedVariants: AffarioProductSearchVariant[] = [];
+
+  for (const variant of family.variants) {
+    const style = getExternalVariantStyle(variant);
+    const styleKey = style ? getStyleFamilyKey(style, family.brand) : "";
+
+    if (!style || !styleKey) {
+      unclassifiedVariants.push(variant);
+      continue;
+    }
+
+    const existing = styleGroups.get(styleKey);
+
+    if (existing) {
+      existing.variants.push(variant);
+    } else {
+      styleGroups.set(styleKey, {
+        variants: [variant],
+        representativeStyle: style,
+      });
+    }
+  }
+
+  if (styleGroups.size <= 1) {
+    return [family];
+  }
+
+  const representativeVariant = family.variants.find(
+    ({ asin }) => asin === family.representativeAsin
+  );
+  const representativeStyle = representativeVariant
+    ? getExternalVariantStyle(representativeVariant)
+    : null;
+  const representativeStyleKey = representativeStyle
+    ? getStyleFamilyKey(representativeStyle, family.brand)
+    : "";
+  const fallbackStyleKey = styleGroups.has(representativeStyleKey)
+    ? representativeStyleKey
+    : styleGroups.keys().next().value;
+
+  if (fallbackStyleKey) {
+    styleGroups.get(fallbackStyleKey)?.variants.push(...unclassifiedVariants);
+  }
+
+  return [...styleGroups.entries()].map(
+    ([styleKey, { variants, representativeStyle: style }]) => {
+      const representative =
+        variants.find(({ asin }) => asin === family.representativeAsin) ??
+        variants.find(({ asin }) => candidatesByAsin.has(asin)) ??
+        variants[0];
+      const candidate = candidatesByAsin.get(representative.asin);
+      const usesOriginalRepresentative =
+        representative.asin === family.representativeAsin;
+
+      return {
+        ...family,
+        familyId: `${family.familyId}:style:${styleKey}`,
+        title:
+          candidate?.title ?? getStyleFamilyTitle(family.brand, style),
+        brand: candidate?.brand ?? family.brand,
+        model:
+          candidate?.model ??
+          (usesOriginalRepresentative ? family.model : null),
+        imageUrl:
+          candidate?.imageUrl ??
+          (usesOriginalRepresentative ? family.imageUrl : null),
+        representativeAsin: representative.asin,
+        variants,
+      };
+    }
+  );
+}
+
 export function groupAffarioExternalProductCandidates(
   candidates: readonly AffarioExternalProductCandidate[]
 ): AffarioProductSearchFamily[] {
   const families = new Map<string, WorkingExternalFamily>();
+  const candidatesByAsin = new Map(
+    candidates.map((candidate) => [candidate.asin, candidate] as const)
+  );
 
   for (const candidate of candidates) {
     const familyId = candidate.parentAsin ?? candidate.asin;
@@ -345,19 +484,23 @@ export function groupAffarioExternalProductCandidates(
     }
   }
 
-  return [...families.values()].map(({ family, variants }) => ({
-    ...family,
-    variants: [...variants.entries()].map(([asin, attributes]) => ({
-      asin,
-      attributes: Object.fromEntries(
-        [...attributes.values()]
-          .sort((left, right) =>
-            left.dimension.localeCompare(right.dimension, "it")
-          )
-          .map(({ dimension, value }) => [dimension, value])
-      ),
-    })),
-  }));
+  return [...families.values()]
+    .map(({ family, variants }): AffarioProductSearchFamily => ({
+      ...family,
+      variants: [...variants.entries()].map(([asin, attributes]) => ({
+        asin,
+        attributes: Object.fromEntries(
+          [...attributes.values()]
+            .sort((left, right) =>
+              left.dimension.localeCompare(right.dimension, "it")
+            )
+            .map(({ dimension, value }) => [dimension, value])
+        ),
+      })),
+    }))
+    .flatMap((family) =>
+      splitExternalFamilyByStyle(family, candidatesByAsin)
+    );
 }
 
 function externalTokenMatches(
@@ -379,6 +522,14 @@ function countExternalTokenMatches(
       externalTokenMatches(queryToken, fieldToken)
     )
   ).length;
+}
+
+function getSignificantQueryTokens(
+  queryTokens: readonly string[]
+): readonly string[] {
+  const significantTokens = queryTokens.filter((token) => token.length >= 2);
+
+  return significantTokens.length > 0 ? significantTokens : queryTokens;
 }
 
 function getExactQueryBrandTokens(
@@ -449,6 +600,12 @@ function scoreExternalFamily(
     eligibleQueryTokens,
     allTokens
   );
+  const significantQueryTokens = getSignificantQueryTokens(
+    preparedQuery.tokens
+  );
+  const allSignificantTokensMatch =
+    countExternalTokenMatches(significantQueryTokens, allTokens) ===
+    significantQueryTokens.length;
   const exactAsin = asinTokens.has(preparedQuery.normalizedQuery);
 
   if (matchedTokens === 0 && !exactAsin) {
@@ -501,7 +658,12 @@ function scoreExternalFamily(
     score += EXTERNAL_SCORE.titlePhrase;
   }
 
-  return { family, score, providerIndex };
+  return {
+    family,
+    score,
+    providerIndex,
+    allSignificantTokensMatch,
+  };
 }
 
 export function rankAffarioExternalProductFamilies(
@@ -513,7 +675,7 @@ export function rankAffarioExternalProductFamilies(
     families
   );
 
-  return families
+  const scoredFamilies = families
     .flatMap((family, providerIndex) => {
       const scoredFamily = scoreExternalFamily(
         preparedQuery,
@@ -522,7 +684,17 @@ export function rankAffarioExternalProductFamilies(
         queryBrandTokens
       );
       return scoredFamily ? [scoredFamily] : [];
-    })
+    });
+  const hasCompleteMatch = scoredFamilies.some(
+    ({ allSignificantTokensMatch }) => allSignificantTokensMatch
+  );
+  const relevantFamilies = hasCompleteMatch
+    ? scoredFamilies.filter(
+        ({ allSignificantTokensMatch }) => allSignificantTokensMatch
+      )
+    : scoredFamilies;
+
+  return relevantFamilies
     .sort(
       (left, right) =>
         right.score - left.score ||

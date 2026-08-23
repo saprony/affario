@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 20 agosto 2026.
+Ultimo aggiornamento: 23 agosto 2026.
 
 ## 1. Scopo e autorità
 
@@ -24,11 +24,9 @@ Prima di iniziare qualsiasi nuova funzione:
 ## 2. Snapshot Git verificato
 
 - Branch: `master`.
-- Working tree iniziale del checkpoint documentale: pulito.
-- HEAD: `b6778d87bc9de08958802cb7ed1256032d188df8` — `feat: add local-first product search fallback`.
-- Prima della chiusura Git della Funzione 037, `master` è un commit ahead rispetto a `origin/master`: la Funzione 036 è ancora solo locale.
-- Ultima funzione completata: **FUNZIONE 037**, validata manualmente in locale.
-- La funzione successiva alla 037 non è ancora avviata.
+- Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
+- Ultima funzione completata: **FUNZIONE 038**, validata tecnicamente e funzionalmente in locale.
+- La funzione successiva alla 038 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -100,8 +98,10 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 
 - In produzione `app/page.tsx` mostra `PublicHome`.
 - In sviluppo `app/page.tsx` carica `DemoHome`.
-- `DemoHome`, `Hero`, `ProductList` e `AnalysisCard` usano ancora il catalogo provvisorio `data/products.ts`.
-- Le API reali di ricerca e lookup prodotto esistono, ma non sono ancora collegate al flusso UI pubblico completo.
+- Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
+- La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` o capacità storage come **Capacità**, `Style` come **Configurazione**.
+- La variante selezionata conserva internamente l'ASIN, ma non avvia ancora Buy Box, lookup prodotto o analisi.
+- `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
 ### 6.2 Ricerca e ingresso prodotto reali
@@ -109,8 +109,12 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Dalla Funzione 037, `GET /api/search/products?q=...` è collegato all'orchestratore local-first e restituisce soltanto il DTO pubblico AFFARIO.
 - Il servizio locale è `searchAffarioProducts(query)`.
 - L'orchestratore server-side `searchAffarioProductsWithFallback(query)` applica il flusso local-first: catalogo AFFARIO e, soltanto senza risultati locali, fallback al provider esterno.
-- La ricerca normalizza e tokenizza, applica ranking leggibile, raggruppa per `parentAsin` e ricompone una variante per ASIN con il proprio insieme di attributi.
-- Il flusso previsto è: **query → candidati → famiglia → variante → ASIN**.
+- La ricerca normalizza e tokenizza, applica ranking leggibile e privilegia i risultati che soddisfano tutti i token significativi della query, senza riempire i risultati principali con match parziali quando esistono match completi.
+- Il raggruppamento provider-agnostic produce famiglie consumer coerenti e ricompone una variante per ASIN con il proprio insieme di attributi.
+- `parentAsin` resta un'informazione tecnica e non definisce necessariamente una singola famiglia consumer; `Style` può discriminare sotto-famiglie quando il parent Amazon comprende modelli commercialmente distinti.
+- Validazione locale `dreame matrix`: Matrix10 Ultra e Matrix10 Pro restano nella stessa famiglia; L40s e L50s sono separati; X60 ed ECOVACS sono esclusi dai match completi.
+- Validazione locale `iphone`: una sola famiglia con 9 varianti.
+- Il flusso approvato è: **query → famiglie consumer → variante → ASIN**.
 - L'utente non deve conoscere l'ASIN o il titolo Amazon completo.
 - Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES`; nell'orchestratore questo esito attiva il fallback provider esterno.
 - Esiste un provider server-only per la ricerca keyword Keepa e la trasformazione dei Product Object in candidati AFFARIO provider-agnostic.
@@ -259,8 +263,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 035 | Provider server-side per ricerca keyword Keepa — commit `1acda79b9aa7e95614cb7be316a43f55909c3d5b` |
 | 036 | Ricerca local-first con fallback provider esterno — commit `b6778d87bc9de08958802cb7ed1256032d188df8` |
 | 037 | API ricerca collegata all'orchestratore local-first, validata manualmente in locale |
+| 038 | DemoHome collegata alla ricerca reale con selezione per famiglia consumer, variante e ASIN |
 
-Totale associazioni registrate: **29**.
+Totale associazioni registrate: **30**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -387,7 +392,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - **“Migliore offerta idonea generica” come prezzo corrente principale** → sostituita da Buy Box / Featured Offer dell'ASIN.
 - **`history=0`** → rimosso nella Funzione 028; lo storico è incluso.
 - **“Keepa non collegato”** → superato: client, adapter, persistenza, cache e API prodotto sono operativi.
-- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 037.
+- **Vecchia roadmap 023–028** → superata dallo sviluppo reale completato fino alla Funzione 038.
 
 ## 16. Questioni aperte e ambiguità
 
@@ -400,7 +405,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **037**, validata manualmente in locale.
-- La funzione successiva alla 037 non è ancora avviata.
+- Ultima funzione completata: **038**, validata tecnicamente e funzionalmente in locale.
+- La funzione successiva alla 038 non è ancora avviata.
 
-La Funzione 037 modifica la route API e lo stato canonico; frontend, database, provider e deploy restano invariati.
+La Funzione 038 collega `DemoHome` alla ricerca reale fino alla selezione interna dell'ASIN; Buy Box, analisi, `PublicHome`, database, provider e deploy restano invariati.
