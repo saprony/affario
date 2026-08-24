@@ -25,8 +25,8 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 039**, validata tecnicamente e funzionalmente in locale.
-- La funzione successiva alla 039 non è ancora avviata.
+- Ultima funzione completata: **FUNZIONE 040**, validata tecnicamente e manualmente in locale.
+- La funzione successiva alla 040 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -102,10 +102,17 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` o capacità storage come **Capacità**, `Style` come **Configurazione**.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
-- La UI usa come prezzo attuale soltanto la Buy Box / Featured Offer, senza fallback `AMAZON` o `NEW`, e mostra prezzo attuale, minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
+- La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
 - Se la Buy Box è assente, la UI non mostra `0 €`; gli errori terminano il loading e consentono esclusivamente un retry volontario, senza retry automatici nascosti.
 - La lookup esegue al massimo una seconda lettura iniziale DB read-only prima di Keepa; non esiste alcun retry automatico Keepa.
-- Nessun Affario Score, Consiglio AFFARIO, Risparmio Potenziale o alert è ancora collegato a questi dati reali.
+- La **FUNZIONE 040 è completata e validata**: il primo Consiglio AFFARIO reale è incluso nella stessa risposta prodotto e nella UI di analisi.
+- La formula V1 usa la posizione della Buy Box attuale tra minimo e media Buy Box degli ultimi 90 giorni e produce un Affario Score deterministico da 0 a 100 con le fasce canoniche **Ottimo momento**, **Buon prezzo**, **Prezzo nella media** e **Conviene aspettare**.
+- Con meno di 4 osservazioni valide o meno di 7 giorni di copertura, il consiglio espone **Dati insufficienti** senza Score numerico né verdetto Compra/Aspetta.
+- Le raccomandazioni operative tipizzate sono `BUY_NOW`, `BUY`, `NEUTRAL`, `WAIT` e `NONE`; la CTA Amazon è coerente con la raccomandazione e usa il link affiliato dell'ASIN esatto analizzato.
+- Il Consiglio AFFARIO entra con una micro-animazione discreta e finita, disabilitata quando il sistema richiede `prefers-reduced-motion`.
+- Il badge **PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI** appare soltanto con copertura annuale Buy Box affidabile; la UI non usa impropriamente la dicitura **Minimo storico**.
+- La validazione manuale finale della UI è completata.
+- Risparmio Potenziale e alert non sono ancora collegati al Consiglio AFFARIO reale.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -271,8 +278,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 037 | API ricerca collegata all'orchestratore local-first, validata manualmente in locale |
 | 038 | DemoHome collegata alla ricerca reale con selezione per famiglia consumer, variante e ASIN |
 | 039 | Completata e validata — variante esatta collegata su azione esplicita a Buy Box e storico 90 giorni reali |
+| 040 | Completata e validata — primo Consiglio AFFARIO reale, raccomandazione operativa e CTA Amazon per la variante esatta |
 
-Totale associazioni registrate: **31**.
+Totale associazioni registrate: **32**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -412,7 +420,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **039**, validata tecnicamente e funzionalmente in locale.
+- Ultima funzione completata: **040**, validata tecnicamente e manualmente in locale.
 - Funzione successiva: **non avviata**.
 
-La Funzione 039 non collega ancora Affario Score, Consiglio AFFARIO, Risparmio Potenziale o alert; `PublicHome`, deploy e funzioni successive restano invariati.
+Risparmio Potenziale e alert non sono ancora integrati; `PublicHome`, deploy e funzioni successive restano invariati.

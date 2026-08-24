@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import {
   AffarioProductLookupError,
   getAffarioProductByAsin,
-  type AffarioProductLookupSource,
 } from "@/services/affarioProductLookup";
+import { buildAffarioProductAdvice } from "@/services/affarioProductAdvice";
 import {
   KeepaClientError,
   normalizeKeepaAsin,
 } from "@/services/keepaClient";
+import type { AffarioAdvice } from "@/types/affarioAdvice";
 
 type ProductRouteContext = {
   params: Promise<{ asin: string }>;
@@ -50,15 +51,13 @@ export type AffarioProductApiResponse = {
       isPrimeEligible: boolean | null;
     };
     lastBuyBoxUpdate: string | null;
-    lastKeepaCheckAt: string;
     priceHistory90Days: {
       averageBuyBoxPrice: number | null;
       minimumBuyBoxPrice: number | null;
       minimumBuyBoxPriceAt: string | null;
       currency: string;
     };
-    source: AffarioProductLookupSource;
-    cacheHit: boolean;
+    advice: AffarioAdvice;
   };
 };
 
@@ -143,6 +142,7 @@ export async function GET(
   try {
     const result = await getAffarioProductByAsin(normalizedAsin);
     const currentPrice = result.buyBox.currentIncludingShippingInEuros;
+    const advice = buildAffarioProductAdvice(result);
 
     return NextResponse.json({
       data: {
@@ -167,15 +167,13 @@ export async function GET(
           isPrimeEligible: result.buyBox.isPrimeEligible,
         },
         lastBuyBoxUpdate: result.lastBuyBoxUpdate,
-        lastKeepaCheckAt: result.lastKeepaCheckAt,
         priceHistory90Days: {
           averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
           minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
           minimumBuyBoxPriceAt: result.buyBox90Days.minimumObservedAt,
           currency: result.currency,
         },
-        source: result.source,
-        cacheHit: result.cacheHit,
+        advice,
       },
     });
   } catch (error) {

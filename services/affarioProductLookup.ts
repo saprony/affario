@@ -3,6 +3,11 @@ import "server-only";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import {
+  analyzePriceHistoryQuality,
+  analyzePriceHistoryWindowMinimum,
+  type PriceHistoryQuality,
+} from "@/lib/analyzePriceHistory";
+import {
   normalizeKeepaAsin,
   type KeepaUsage,
 } from "@/services/keepaClient";
@@ -14,6 +19,12 @@ export const AFFARIO_KEEPA_CACHE_TTL_MINUTES = 60;
 
 const AFFARIO_KEEPA_CACHE_TTL_MS =
   AFFARIO_KEEPA_CACHE_TTL_MINUTES * 60 * 1_000;
+const NINETY_DAYS_IN_MILLISECONDS = 90 * 24 * 60 * 60 * 1_000;
+const THREE_HUNDRED_SIXTY_FIVE_DAYS_IN_MILLISECONDS =
+  365 * 24 * 60 * 60 * 1_000;
+const BUY_BOX_HISTORY_RELIABLE_READ_LIMIT = 5_000;
+const BUY_BOX_HISTORY_READ_LIMIT =
+  BUY_BOX_HISTORY_RELIABLE_READ_LIMIT + 1;
 
 export type AffarioProductLookupSource =
   | "DATABASE_CACHE"
@@ -57,11 +68,18 @@ export type AffarioLookupBuyBox90Days = {
   minimumObservedAt: string | null;
 };
 
+export type AffarioLookupBuyBox365Days = {
+  minimumInEuros: number | null;
+  hasReliableCoverage: boolean;
+};
+
 export type AffarioProductLookupResult = {
   asin: string;
   product: AffarioLookupProduct;
   buyBox: AffarioLookupBuyBox;
   buyBox90Days: AffarioLookupBuyBox90Days;
+  buyBoxHistory90Days: PriceHistoryQuality;
+  buyBox365Days: AffarioLookupBuyBox365Days;
   currency: string;
   lastBuyBoxUpdate: string | null;
   buyBoxAgeMinutes: number | null;
@@ -127,10 +145,20 @@ type RawLatestRow = {
   requested_at: string;
 };
 
+type BuyBoxHistoryRow = {
+  total_cents: number | null;
+  observed_at: string;
+};
+
 type StoredLookupData = {
   product: ProductRow | null;
   snapshot: SnapshotRow | null;
   rawLatest: RawLatestRow | null;
+  buyBoxHistory365Days: readonly BuyBoxHistoryRow[];
+  buyBoxHistory365DaysBaseline: BuyBoxHistoryRow | null;
+  buyBoxHistory365DaysStartedAt: string;
+  buyBoxHistory365DaysEndedAt: string;
+  buyBoxHistory365DaysIsTruncated: boolean;
 };
 
 function throwForDatabaseError(
@@ -185,7 +213,8 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 async function readStoredLookupData(
-  asin: string
+  asin: string,
+  nowMilliseconds: number
 ): Promise<StoredLookupData> {
   let supabase: ReturnType<typeof getSupabaseServerClient>;
 
@@ -198,7 +227,17 @@ async function readStoredLookupData(
     );
   }
 
-  const [productResult, snapshotResult, rawLatestResult] = await Promise.all([
+  const annualWindowStartedAt = new Date(
+    nowMilliseconds - THREE_HUNDRED_SIXTY_FIVE_DAYS_IN_MILLISECONDS
+  ).toISOString();
+  const annualWindowEndedAt = new Date(nowMilliseconds).toISOString();
+  const [
+    productResult,
+    snapshotResult,
+    rawLatestResult,
+    buyBoxHistoryResult,
+    buyBoxHistoryBaselineResult,
+  ] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -220,6 +259,22 @@ async function readStoredLookupData(
       .select("asin,product_object,requested_at")
       .eq("asin", asin)
       .maybeSingle(),
+    supabase
+      .from("buybox_price_history")
+      .select("total_cents,observed_at")
+      .eq("asin", asin)
+      .gte("observed_at", annualWindowStartedAt)
+      .lte("observed_at", annualWindowEndedAt)
+      .order("observed_at", { ascending: false })
+      .limit(BUY_BOX_HISTORY_READ_LIMIT),
+    supabase
+      .from("buybox_price_history")
+      .select("total_cents,observed_at")
+      .eq("asin", asin)
+      .lt("observed_at", annualWindowStartedAt)
+      .order("observed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   throwForDatabaseError(productResult.error, "Lettura products fallita");
@@ -231,29 +286,52 @@ async function readStoredLookupData(
     rawLatestResult.error,
     "Lettura keepa_raw_latest fallita"
   );
+  throwForDatabaseError(
+    buyBoxHistoryResult.error,
+    "Lettura buybox_price_history fallita"
+  );
+  throwForDatabaseError(
+    buyBoxHistoryBaselineResult.error,
+    "Lettura stato iniziale buybox_price_history fallita"
+  );
 
   const product = productResult.data as ProductRow | null;
   const snapshot = snapshotResult.data as SnapshotRow | null;
   const rawLatest = rawLatestResult.data as RawLatestRow | null;
+  const buyBoxHistory365Days = (buyBoxHistoryResult.data ??
+    []) as BuyBoxHistoryRow[];
+  const buyBoxHistory365DaysBaseline =
+    buyBoxHistoryBaselineResult.data as BuyBoxHistoryRow | null;
 
   if (rawLatest && !isJsonObject(rawLatest.product_object)) {
     throw new Error("keepa_raw_latest.product_object non e un oggetto JSON.");
   }
 
-  return { product, snapshot, rawLatest };
+  return {
+    product,
+    snapshot,
+    rawLatest,
+    buyBoxHistory365Days,
+    buyBoxHistory365DaysBaseline,
+    buyBoxHistory365DaysStartedAt: annualWindowStartedAt,
+    buyBoxHistory365DaysEndedAt: annualWindowEndedAt,
+    buyBoxHistory365DaysIsTruncated:
+      buyBoxHistory365Days.length > BUY_BOX_HISTORY_RELIABLE_READ_LIMIT,
+  };
 }
 
 async function readInitialStoredLookupData(
-  asin: string
+  asin: string,
+  nowMilliseconds: number
 ): Promise<StoredLookupData> {
   try {
-    return await readStoredLookupData(asin);
+    return await readStoredLookupData(asin, nowMilliseconds);
   } catch (error) {
     if (!(error instanceof AffarioProductLookupError)) {
       throw error;
     }
 
-    return readStoredLookupData(asin);
+    return readStoredLookupData(asin, nowMilliseconds);
   }
 }
 
@@ -263,7 +341,16 @@ function buildLookupResult(
   nowMilliseconds: number,
   usage?: KeepaUsage
 ): AffarioProductLookupResult {
-  const { product, snapshot, rawLatest } = storedData;
+  const {
+    product,
+    snapshot,
+    rawLatest,
+    buyBoxHistory365Days,
+    buyBoxHistory365DaysBaseline,
+    buyBoxHistory365DaysStartedAt,
+    buyBoxHistory365DaysEndedAt,
+    buyBoxHistory365DaysIsTruncated,
+  } = storedData;
 
   if (!product || !snapshot) {
     throw new Error("Dati Keepa persistiti incompleti dopo la lookup.");
@@ -275,6 +362,26 @@ function buildLookupResult(
 
   const lastBuyBoxUpdate = snapshot.last_buy_box_updated_at;
   const tokensConsumed = usage?.tokensConsumed ?? 0;
+  const history90DaysStartedAt =
+    nowMilliseconds - NINETY_DAYS_IN_MILLISECONDS;
+  const buyBoxHistoryPoints = [
+    ...(buyBoxHistory365DaysBaseline
+      ? [buyBoxHistory365DaysBaseline]
+      : []),
+    ...buyBoxHistory365Days,
+  ].map((observation) => ({
+    price:
+      observation.total_cents === null
+        ? null
+        : observation.total_cents / 100,
+    observedAt: observation.observed_at,
+  }));
+  const buyBox365Days = analyzePriceHistoryWindowMinimum({
+    observations: buyBoxHistoryPoints,
+    windowStart: buyBoxHistory365DaysStartedAt,
+    windowEnd: buyBoxHistory365DaysEndedAt,
+    isTruncated: buyBoxHistory365DaysIsTruncated,
+  });
 
   return {
     asin: product.asin,
@@ -315,6 +422,21 @@ function buildLookupResult(
       minimumInEuros: centsToEuros(snapshot.min90_cents),
       minimumObservedAt: snapshot.min90_observed_at,
     },
+    buyBoxHistory90Days: analyzePriceHistoryQuality(
+      buyBoxHistoryPoints
+        .filter(
+          (observation) =>
+            Date.parse(observation.observedAt) >= history90DaysStartedAt
+        )
+        .map((observation) => ({
+          price: observation.price ?? Number.NaN,
+          observedAt: observation.observedAt,
+        }))
+    ),
+    buyBox365Days: {
+      minimumInEuros: buyBox365Days.minimumPrice,
+      hasReliableCoverage: buyBox365Days.hasReliableCoverage,
+    },
     currency: snapshot.currency,
     lastBuyBoxUpdate,
     buyBoxAgeMinutes:
@@ -337,7 +459,11 @@ export async function getAffarioProductByAsin(
   asin: string
 ): Promise<AffarioProductLookupResult> {
   const normalizedAsin = normalizeKeepaAsin(asin);
-  const storedData = await readInitialStoredLookupData(normalizedAsin);
+  const initialReadTime = Date.now();
+  const storedData = await readInitialStoredLookupData(
+    normalizedAsin,
+    initialReadTime
+  );
   const cacheCheckTime = Date.now();
 
   if (
@@ -367,12 +493,16 @@ export async function getAffarioProductByAsin(
     );
   }
 
-  const refreshedStoredData = await readStoredLookupData(normalizedAsin);
+  const refreshedReadTime = Date.now();
+  const refreshedStoredData = await readStoredLookupData(
+    normalizedAsin,
+    refreshedReadTime
+  );
 
   return buildLookupResult(
     refreshedStoredData,
     "KEEPA_REFRESH",
-    Date.now(),
+    refreshedReadTime,
     keepaResult.usage
   );
 }

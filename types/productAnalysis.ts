@@ -1,3 +1,5 @@
+import type { AffarioAdvice } from "./affarioAdvice";
+
 export type AffarioProductAnalysisData = {
   asin: string;
   buyBox: {
@@ -9,6 +11,7 @@ export type AffarioProductAnalysisData = {
     averageBuyBoxPrice: number | null;
     minimumBuyBoxPrice: number | null;
   };
+  advice: AffarioAdvice;
 };
 
 export type ProductAnalysisState =

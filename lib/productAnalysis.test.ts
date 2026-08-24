@@ -9,6 +9,8 @@ import {
   requestProductAnalysisOnce,
   type ProductAnalysisRequester,
 } from "./productAnalysis";
+import type { AffarioAdvice } from "../types/affarioAdvice";
+import type { AffarioProductAnalysisData } from "../types/productAnalysis";
 
 function createPayload(overrides?: {
   status?: "AVAILABLE" | "UNAVAILABLE";
@@ -30,6 +32,16 @@ function createPayload(overrides?: {
         averageBuyBoxPrice: 1210.5,
         minimumBuyBoxPrice: 1099,
         currency: "EUR",
+      },
+      advice: {
+        status: "AVAILABLE",
+        score: 84,
+        label: "Ottimo momento",
+        message:
+          "Il prezzo attuale è molto vicino ai minimi recenti e sotto la media degli ultimi 90 giorni.",
+        tone: "POSITIVE",
+        recommendation: "BUY_NOW",
+        priceHighlight: "LOWEST_12_MONTHS",
       },
       source: "DATABASE_CACHE",
       cacheHit: true,
@@ -90,6 +102,7 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
 
   assert.ok(result);
   assert.deepEqual(Object.keys(result).sort(), [
+    "advice",
     "asin",
     "buyBox",
     "lastBuyBoxUpdate",
@@ -98,6 +111,112 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
   assert.equal("lastKeepaCheckAt" in result, false);
   assert.equal("source" in result, false);
   assert.equal("cacheHit" in result, false);
+
+  const presentation = getProductAnalysisPresentation(result);
+
+  assert.equal(
+    presentation.amazonCta?.url,
+    "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21"
+  );
+  assert.equal(presentation.amazonCta?.label, "Compra ora su Amazon");
+  assert.equal(
+    presentation.advice.priceHighlight,
+    "LOWEST_12_MONTHS"
+  );
+  assert.equal(
+    presentation.amazonCta?.label.includes(result.asin),
+    false
+  );
+});
+
+test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
+  const baseData = {
+    asin: "B0FQGPJCJK",
+    buyBox: { status: "AVAILABLE" as const, currentPrice: 1169 },
+    lastBuyBoxUpdate: "2026-08-24T08:05:00.000Z",
+    priceHistory90Days: {
+      averageBuyBoxPrice: 1242.53,
+      minimumBuyBoxPrice: 1169,
+    },
+  };
+  const cases: Array<{
+    advice: AffarioAdvice;
+    expectedPriority: "PRIMARY" | "SUPPORTING" | "NEUTRAL" | null;
+  }> = [
+    {
+      advice: {
+        status: "AVAILABLE",
+        score: 100,
+        label: "Ottimo momento",
+        message: "Prezzo al minimo.",
+        tone: "POSITIVE",
+        recommendation: "BUY_NOW",
+        priceHighlight: null,
+      },
+      expectedPriority: "PRIMARY",
+    },
+    {
+      advice: {
+        status: "AVAILABLE",
+        score: 79,
+        label: "Buon prezzo",
+        message: "Prezzo sotto la media.",
+        tone: "POSITIVE",
+        recommendation: "BUY",
+        priceHighlight: null,
+      },
+      expectedPriority: "SUPPORTING",
+    },
+    {
+      advice: {
+        status: "AVAILABLE",
+        score: 50,
+        label: "Prezzo nella media",
+        message: "Prezzo in linea con la media.",
+        tone: "NEUTRAL",
+        recommendation: "NEUTRAL",
+        priceHighlight: null,
+      },
+      expectedPriority: "NEUTRAL",
+    },
+    {
+      advice: {
+        status: "AVAILABLE",
+        score: 49,
+        label: "Conviene aspettare",
+        message: "Prezzo sopra la media.",
+        tone: "NEGATIVE",
+        recommendation: "WAIT",
+        priceHighlight: null,
+      },
+      expectedPriority: null,
+    },
+    {
+      advice: {
+        status: "INSUFFICIENT_DATA",
+        score: null,
+        label: "Dati insufficienti",
+        message: "Storico insufficiente.",
+        tone: "MUTED",
+        recommendation: "NONE",
+        priceHighlight: null,
+      },
+      expectedPriority: null,
+    },
+  ];
+
+  for (const { advice, expectedPriority } of cases) {
+    const presentation = getProductAnalysisPresentation({
+      ...baseData,
+      advice,
+    } satisfies AffarioProductAnalysisData);
+
+    assert.equal(presentation.amazonCta?.priority ?? null, expectedPriority);
+    assert.equal(
+      presentation.amazonCta?.label.includes(baseData.asin) ?? false,
+      false
+    );
+  }
 });
 
 test("dopo un errore rilascia il loading e consente un retry volontario", async () => {
@@ -178,12 +297,25 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
       averageBuyBoxPrice: 1210.5,
       minimumBuyBoxPrice: 1099,
     },
+    advice: {
+      status: "INSUFFICIENT_DATA" as const,
+      score: null,
+      label: "Dati insufficienti" as const,
+      message:
+        "AFFARIO non ha ancora abbastanza storico per esprimere un consiglio affidabile.",
+      tone: "MUTED" as const,
+      recommendation: "NONE" as const,
+      priceHighlight: null,
+    },
   };
   const presentation = getProductAnalysisPresentation(data);
 
   assert.equal(presentation.isBuyBoxAvailable, false);
   assert.equal(presentation.currentPrice, null);
   assert.equal(presentation.priceTimestamp, null);
+  assert.equal(presentation.advice.status, "INSUFFICIENT_DATA");
+  assert.equal(presentation.advice.score, null);
+  assert.equal(presentation.amazonCta, null);
   assert.equal(presentation.minimum90Days, "1.099,00 €");
   assert.equal(presentation.average90Days, "1.210,50 €");
 });

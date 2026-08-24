@@ -1,4 +1,12 @@
 import type { AffarioProductAnalysisData } from "../types/productAnalysis";
+import type {
+  AffarioAdvice,
+  AffarioAdviceLabel,
+  AffarioPriceHighlight,
+  AffarioAdviceRecommendation,
+  AffarioAdviceTone,
+} from "../types/affarioAdvice";
+import { buildAmazonAffiliateProductUrl } from "./amazonAffiliateLink";
 
 type ProductAnalysisHttpResponse = {
   ok: boolean;
@@ -15,6 +23,12 @@ export type ProductAnalysisRequestGate = {
 };
 
 export type ProductAnalysisPresentation = {
+  advice: AffarioAdvice;
+  amazonCta: {
+    url: string;
+    label: "Compra ora su Amazon" | "Vedi questa variante su Amazon";
+    priority: "PRIMARY" | "SUPPORTING" | "NEUTRAL";
+  } | null;
   isBuyBoxAvailable: boolean;
   currentPrice: string | null;
   priceTimestamp: string | null;
@@ -37,6 +51,107 @@ function isNullableNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value));
 }
 
+const AFFARIO_ADVICE_LABELS = new Set<AffarioAdviceLabel>([
+  "Ottimo momento",
+  "Buon prezzo",
+  "Prezzo nella media",
+  "Conviene aspettare",
+  "Dati insufficienti",
+]);
+
+const AFFARIO_ADVICE_TONES = new Set<AffarioAdviceTone>([
+  "POSITIVE",
+  "NEUTRAL",
+  "NEGATIVE",
+  "MUTED",
+]);
+
+const AFFARIO_ADVICE_RECOMMENDATIONS =
+  new Set<AffarioAdviceRecommendation>([
+    "BUY_NOW",
+    "BUY",
+    "NEUTRAL",
+    "WAIT",
+    "NONE",
+  ]);
+
+const AFFARIO_PRICE_HIGHLIGHTS = new Set<AffarioPriceHighlight>([
+  "LOWEST_12_MONTHS",
+  null,
+]);
+
+function parseAffarioAdvice(value: unknown): AffarioAdvice | null {
+  if (
+    !isRecord(value) ||
+    (value.status !== "AVAILABLE" &&
+      value.status !== "INSUFFICIENT_DATA") ||
+    (value.score !== null &&
+      (typeof value.score !== "number" ||
+        !Number.isInteger(value.score) ||
+        value.score < 0 ||
+        value.score > 100)) ||
+    typeof value.label !== "string" ||
+    !AFFARIO_ADVICE_LABELS.has(value.label as AffarioAdviceLabel) ||
+    typeof value.message !== "string" ||
+    !value.message.trim() ||
+    typeof value.tone !== "string" ||
+    !AFFARIO_ADVICE_TONES.has(value.tone as AffarioAdviceTone) ||
+    typeof value.recommendation !== "string" ||
+    !AFFARIO_ADVICE_RECOMMENDATIONS.has(
+      value.recommendation as AffarioAdviceRecommendation
+    ) ||
+    !AFFARIO_PRICE_HIGHLIGHTS.has(
+      value.priceHighlight as AffarioPriceHighlight
+    ) ||
+    (value.status === "AVAILABLE" && value.score === null) ||
+    (value.status === "AVAILABLE" && value.recommendation === "NONE") ||
+    (value.status === "INSUFFICIENT_DATA" &&
+      (value.score !== null || value.recommendation !== "NONE"))
+  ) {
+    return null;
+  }
+
+  return {
+    status: value.status,
+    score: value.score,
+    label: value.label as AffarioAdviceLabel,
+    message: value.message,
+    tone: value.tone as AffarioAdviceTone,
+    recommendation:
+      value.recommendation as AffarioAdviceRecommendation,
+    priceHighlight: value.priceHighlight as AffarioPriceHighlight,
+  };
+}
+
+function getAmazonCta(
+  asin: string,
+  recommendation: AffarioAdviceRecommendation
+): ProductAnalysisPresentation["amazonCta"] {
+  if (recommendation === "WAIT" || recommendation === "NONE") {
+    return null;
+  }
+
+  const url = buildAmazonAffiliateProductUrl(asin);
+
+  if (!url) {
+    return null;
+  }
+
+  if (recommendation === "BUY_NOW") {
+    return { url, label: "Compra ora su Amazon", priority: "PRIMARY" };
+  }
+
+  if (recommendation === "BUY") {
+    return { url, label: "Compra ora su Amazon", priority: "SUPPORTING" };
+  }
+
+  return {
+    url,
+    label: "Vedi questa variante su Amazon",
+    priority: "NEUTRAL",
+  };
+}
+
 function getApiErrorMessage(payload: unknown): string | null {
   if (!isRecord(payload) || !isRecord(payload.error)) {
     return null;
@@ -56,6 +171,7 @@ function parseProductAnalysisPayload(
 
   const { data } = payload;
   const lastBuyBoxUpdate = data.lastBuyBoxUpdate;
+  const advice = parseAffarioAdvice(data.advice);
 
   if (
     typeof data.asin !== "string" ||
@@ -71,6 +187,7 @@ function parseProductAnalysisPayload(
     !isRecord(data.priceHistory90Days) ||
     !isNullableNumber(data.priceHistory90Days.averageBuyBoxPrice) ||
     !isNullableNumber(data.priceHistory90Days.minimumBuyBoxPrice) ||
+    !advice ||
     data.buyBox.currency !== "EUR" ||
     data.priceHistory90Days.currency !== "EUR"
   ) {
@@ -89,6 +206,7 @@ function parseProductAnalysisPayload(
       averageBuyBoxPrice: data.priceHistory90Days.averageBuyBoxPrice,
       minimumBuyBoxPrice: data.priceHistory90Days.minimumBuyBoxPrice,
     },
+    advice,
   };
 }
 
@@ -208,6 +326,8 @@ export function getProductAnalysisPresentation(
     data.buyBox.currentPrice !== null;
 
   return {
+    advice: data.advice,
+    amazonCta: getAmazonCta(data.asin, data.advice.recommendation),
     isBuyBoxAvailable,
     currentPrice: isBuyBoxAvailable
       ? formatEuroPrice(data.buyBox.currentPrice)
