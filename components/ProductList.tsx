@@ -1,18 +1,21 @@
 import ProductVariantSelector from "@/components/ProductVariantSelector";
+import type { ProductAnalysisState } from "@/types/productAnalysis";
 import type { AffarioProductSearchFamily } from "@/types/productSearch";
 
 type ProductListProps = {
   query: string;
   families: readonly AffarioProductSearchFamily[];
-  selectedAsin: string | null;
-  onSelectVariant: (familyId: string, asin: string | null) => void;
+  analysisState: ProductAnalysisState;
+  onVariantChange: (familyId: string) => void;
+  onAnalyzeVariant: (familyId: string, asin: string) => void;
 };
 
 export default function ProductList({
   query,
   families,
-  selectedAsin,
-  onSelectVariant,
+  analysisState,
+  onVariantChange,
+  onAnalyzeVariant,
 }: ProductListProps) {
   return (
     <section className="mx-auto max-w-4xl px-5">
@@ -30,8 +33,9 @@ export default function ProductList({
             key={`${family.familyId}-${query}`}
             family={family}
             query={query}
-            selectedAsin={selectedAsin}
-            onSelectVariant={onSelectVariant}
+            analysisState={analysisState}
+            onVariantChange={onVariantChange}
+            onAnalyzeVariant={onAnalyzeVariant}
           />
         ))}
       </div>

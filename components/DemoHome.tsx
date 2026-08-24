@@ -1,20 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Hero from "@/components/Hero";
 import ProductList from "@/components/ProductList";
 import {
   AffarioProductSearchInputError,
   prepareAffarioProductSearchQuery,
 } from "@/lib/affarioProductSearch";
+import {
+  ProductAnalysisRequestError,
+  requestProductAnalysisOnce,
+} from "@/lib/productAnalysis";
+import type { ProductAnalysisState } from "@/types/productAnalysis";
 import type { AffarioProductSearchWithFallbackResult } from "@/types/productSearch";
 
 type SearchStatus = "initial" | "loading" | "results" | "error";
-
-type SelectedVariant = {
-  familyId: string;
-  asin: string;
-};
 
 class DemoProductSearchError extends Error {
   constructor(message: string) {
@@ -80,11 +80,13 @@ export default function DemoHome() {
   const [searchResult, setSearchResult] =
     useState<AffarioProductSearchWithFallbackResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedVariant, setSelectedVariant] =
-    useState<SelectedVariant | null>(null);
+  const [productAnalysis, setProductAnalysis] =
+    useState<ProductAnalysisState>({ status: "idle" });
+  const productAnalysisGate = useRef({ inFlight: false });
+  const productAnalysisRequestId = useRef(0);
 
   async function handleSearch() {
-    if (status === "loading") {
+    if (status === "loading" || productAnalysis.status === "loading") {
       return;
     }
 
@@ -100,7 +102,8 @@ export default function DemoHome() {
 
       setSubmittedQuery("");
       setSearchResult(null);
-      setSelectedVariant(null);
+      productAnalysisRequestId.current += 1;
+      setProductAnalysis({ status: "idle" });
       setErrorMessage(message);
       setStatus("error");
       return;
@@ -108,7 +111,8 @@ export default function DemoHome() {
 
     setSubmittedQuery(query.trim());
     setSearchResult(null);
-    setSelectedVariant(null);
+    productAnalysisRequestId.current += 1;
+    setProductAnalysis({ status: "idle" });
     setErrorMessage(null);
     setStatus("loading");
 
@@ -148,15 +152,50 @@ export default function DemoHome() {
     }
   }
 
-  function handleVariantSelect(familyId: string, asin: string | null) {
-    if (!asin) {
-      setSelectedVariant((current) =>
-        current?.familyId === familyId ? null : current
-      );
+  function handleVariantChange(familyId: string) {
+    setProductAnalysis((current) => {
+      if (current.status === "idle" || current.familyId !== familyId) {
+        return current;
+      }
+
+      productAnalysisRequestId.current += 1;
+      return { status: "idle" };
+    });
+  }
+
+  async function handleProductAnalysis(familyId: string, asin: string) {
+    const request = requestProductAnalysisOnce(
+      asin,
+      productAnalysisGate.current
+    );
+
+    if (!request) {
       return;
     }
 
-    setSelectedVariant({ familyId, asin });
+    const requestId = productAnalysisRequestId.current + 1;
+    productAnalysisRequestId.current = requestId;
+    setProductAnalysis({ status: "loading", familyId, asin });
+
+    try {
+      const data = await request;
+
+      if (productAnalysisRequestId.current === requestId) {
+        setProductAnalysis({ status: "success", familyId, asin, data });
+      }
+    } catch (error) {
+      if (productAnalysisRequestId.current === requestId) {
+        setProductAnalysis({
+          status: "error",
+          familyId,
+          asin,
+          message:
+            error instanceof ProductAnalysisRequestError
+              ? error.message
+              : "Non è stato possibile recuperare i dati del prezzo.",
+        });
+      }
+    }
   }
 
   return (
@@ -166,6 +205,7 @@ export default function DemoHome() {
         setQuery={setQuery}
         onSearch={handleSearch}
         isLoading={status === "loading"}
+        isDisabled={productAnalysis.status === "loading"}
       />
 
       {status === "loading" && (
@@ -207,8 +247,9 @@ export default function DemoHome() {
         <ProductList
           query={submittedQuery}
           families={searchResult.families}
-          selectedAsin={selectedVariant?.asin ?? null}
-          onSelectVariant={handleVariantSelect}
+          analysisState={productAnalysis}
+          onVariantChange={handleVariantChange}
+          onAnalyzeVariant={handleProductAnalysis}
         />
       ) : null}
     </main>

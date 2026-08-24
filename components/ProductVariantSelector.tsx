@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import ProductPriceAnalysis from "@/components/ProductPriceAnalysis";
 import {
   createInitialVariantSelection,
   findVariantForSelection,
@@ -11,20 +12,23 @@ import {
   getVariantDimensions,
   type VariantSelection,
 } from "@/lib/productVariantSelection";
+import type { ProductAnalysisState } from "@/types/productAnalysis";
 import type { AffarioProductSearchFamily } from "@/types/productSearch";
 
 type ProductVariantSelectorProps = {
   family: AffarioProductSearchFamily;
   query: string;
-  selectedAsin: string | null;
-  onSelectVariant: (familyId: string, asin: string | null) => void;
+  analysisState: ProductAnalysisState;
+  onVariantChange: (familyId: string) => void;
+  onAnalyzeVariant: (familyId: string, asin: string) => void;
 };
 
 export default function ProductVariantSelector({
   family,
   query,
-  selectedAsin,
-  onSelectVariant,
+  analysisState,
+  onVariantChange,
+  onAnalyzeVariant,
 }: ProductVariantSelectorProps) {
   const dimensions = useMemo(
     () => getVariantDimensions(family.variants),
@@ -37,11 +41,30 @@ export default function ProductVariantSelector({
   const [selection, setSelection] = useState<VariantSelection>(() =>
     createInitialVariantSelection(query, family.variants, dimensions)
   );
-  const selectedVariant = findVariantForSelection(
+  const [undimensionedVariantAsin, setUndimensionedVariantAsin] = useState<
+    string | null
+  >(() =>
+    dimensions.length === 0 && family.variants.length === 1
+      ? family.variants[0].asin
+      : null
+  );
+  const dimensionedVariant = findVariantForSelection(
     family.variants,
     dimensions,
     selection
   );
+  const selectedVariant =
+    dimensions.length === 0
+      ? family.variants.find(
+          (variant) => variant.asin === undimensionedVariantAsin
+        ) ?? null
+      : dimensionedVariant;
+  const isAnalysisLoading = analysisState.status === "loading";
+  const isSelectedVariantAnalysis =
+    selectedVariant !== null &&
+    analysisState.status !== "idle" &&
+    analysisState.familyId === family.familyId &&
+    analysisState.asin === selectedVariant.asin;
 
   function handleAttributeSelect(
     dimension: string,
@@ -63,7 +86,12 @@ export default function ProductVariantSelector({
       nextSelection[dimension] = value;
       return nextSelection;
     });
-    onSelectVariant(family.familyId, null);
+    onVariantChange(family.familyId);
+  }
+
+  function handleUndimensionedVariantSelect(asin: string) {
+    setUndimensionedVariantAsin(asin);
+    onVariantChange(family.familyId);
   }
 
   return (
@@ -137,11 +165,12 @@ export default function ProductVariantSelector({
                   <button
                     key={value}
                     type="button"
+                    disabled={isAnalysisLoading}
                     aria-pressed={isSelected}
                     onClick={() =>
                       handleAttributeSelect(dimension, value, dimensionIndex)
                     }
-                    className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition ${
+                    className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition disabled:cursor-wait disabled:opacity-60 ${
                       isSelected
                         ? "border-green-600 bg-green-600 text-white"
                         : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
@@ -156,28 +185,26 @@ export default function ProductVariantSelector({
         );
       })}
 
-      {dimensions.length === 0 && (
+      {dimensions.length === 0 && family.variants.length > 1 && (
         <fieldset className="mt-5">
           <legend className="font-bold text-gray-700">
             Varianti disponibili
           </legend>
           <div className="mt-3 flex flex-wrap gap-2">
             {family.variants.map((variant, index) => {
-              const isSelected = selectedAsin === variant.asin;
-              const label =
-                family.variants.length === 1
-                  ? "Unica variante disponibile"
-                  : `Variante ${index + 1}`;
+              const isSelected = undimensionedVariantAsin === variant.asin;
+              const label = `Variante ${index + 1}`;
 
               return (
                 <button
                   key={variant.asin}
                   type="button"
+                  disabled={isAnalysisLoading}
                   aria-pressed={isSelected}
                   onClick={() =>
-                    onSelectVariant(family.familyId, variant.asin)
+                    handleUndimensionedVariantSelect(variant.asin)
                   }
-                  className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition ${
+                  className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition disabled:cursor-wait disabled:opacity-60 ${
                     isSelected
                       ? "border-green-600 bg-green-600 text-white"
                       : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
@@ -200,7 +227,7 @@ export default function ProductVariantSelector({
             <p className="mt-1 font-bold text-gray-900">
               {getVariantDescription(selectedVariant)}
             </p>
-            {selectedAsin === selectedVariant.asin && (
+            {isSelectedVariantAnalysis && (
               <p className="mt-2 font-bold text-green-700">
                 Variante selezionata correttamente.
               </p>
@@ -209,17 +236,21 @@ export default function ProductVariantSelector({
 
           <button
             type="button"
-            aria-pressed={selectedAsin === selectedVariant.asin}
+            disabled={isAnalysisLoading}
             onClick={() =>
-              onSelectVariant(family.familyId, selectedVariant.asin)
+              onAnalyzeVariant(family.familyId, selectedVariant.asin)
             }
-            className="mt-4 w-full rounded-xl bg-green-600 px-5 py-3 font-extrabold text-white sm:mt-0 sm:w-auto"
+            className="mt-4 w-full rounded-xl bg-green-600 px-5 py-3 font-extrabold text-white disabled:cursor-wait disabled:bg-green-400 sm:mt-0 sm:w-auto"
           >
-            {selectedAsin === selectedVariant.asin
-              ? "Variante selezionata"
-              : "Seleziona questa variante"}
+            {isSelectedVariantAnalysis && analysisState.status === "loading"
+              ? "Analisi in corso..."
+              : "Analizza il prezzo"}
           </button>
         </div>
+      )}
+
+      {isSelectedVariantAnalysis && (
+        <ProductPriceAnalysis state={analysisState} />
       )}
     </article>
   );

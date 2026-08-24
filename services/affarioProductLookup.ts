@@ -243,6 +243,20 @@ async function readStoredLookupData(
   return { product, snapshot, rawLatest };
 }
 
+async function readInitialStoredLookupData(
+  asin: string
+): Promise<StoredLookupData> {
+  try {
+    return await readStoredLookupData(asin);
+  } catch (error) {
+    if (!(error instanceof AffarioProductLookupError)) {
+      throw error;
+    }
+
+    return readStoredLookupData(asin);
+  }
+}
+
 function buildLookupResult(
   storedData: StoredLookupData,
   source: AffarioProductLookupSource,
@@ -323,7 +337,7 @@ export async function getAffarioProductByAsin(
   asin: string
 ): Promise<AffarioProductLookupResult> {
   const normalizedAsin = normalizeKeepaAsin(asin);
-  const storedData = await readStoredLookupData(normalizedAsin);
+  const storedData = await readInitialStoredLookupData(normalizedAsin);
   const cacheCheckTime = Date.now();
 
   if (

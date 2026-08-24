@@ -57,11 +57,11 @@ export type PreparedAffarioProductSearchQuery = {
 type ScoredFamily = {
   family: AffarioProductSearchFamily;
   score: number;
+  allSignificantTokensMatch: boolean;
 };
 
 type ScoredExternalFamily = ScoredFamily & {
   providerIndex: number;
-  allSignificantTokensMatch: boolean;
 };
 
 type ExternalAttribute = {
@@ -72,6 +72,14 @@ type ExternalAttribute = {
 type WorkingExternalFamily = {
   family: Omit<AffarioProductSearchFamily, "variants">;
   variants: Map<string, Map<string, ExternalAttribute>>;
+};
+
+export type AffarioProductFamilyMetadata = {
+  asin: string;
+  title: string;
+  brand: string | null;
+  model: string | null;
+  imageUrl: string | null;
 };
 
 export function normalizeAffarioProductSearchText(value: string): string {
@@ -175,6 +183,12 @@ function scoreFamily(
   addTokens(allTokens, asinTokens);
 
   const matchedTokens = countTokenMatches(preparedQuery.tokens, allTokens);
+  const significantQueryTokens = getSignificantQueryTokens(
+    preparedQuery.tokens
+  );
+  const allSignificantTokensMatch =
+    countAffarioSearchTokenMatches(significantQueryTokens, allTokens) ===
+    significantQueryTokens.length;
   const exactAsin = asinTokens.has(preparedQuery.normalizedQuery);
 
   if (matchedTokens === 0 && !exactAsin) {
@@ -233,18 +247,34 @@ function scoreFamily(
       ? { ...family, representativeAsin: exactVariant.asin }
       : family,
     score,
+    allSignificantTokensMatch,
   };
+}
+
+function keepCompleteTokenMatchesWhenAvailable<T extends ScoredFamily>(
+  scoredFamilies: readonly T[]
+): T[] {
+  const hasCompleteMatch = scoredFamilies.some(
+    ({ allSignificantTokensMatch }) => allSignificantTokensMatch
+  );
+
+  return hasCompleteMatch
+    ? scoredFamilies.filter(
+        ({ allSignificantTokensMatch }) => allSignificantTokensMatch
+      )
+    : [...scoredFamilies];
 }
 
 export function rankAffarioProductFamilies(
   preparedQuery: PreparedAffarioProductSearchQuery,
   families: readonly AffarioProductSearchFamily[]
 ): AffarioProductSearchFamily[] {
-  return families
-    .flatMap((family) => {
-      const scoredFamily = scoreFamily(preparedQuery, family);
-      return scoredFamily ? [scoredFamily] : [];
-    })
+  const scoredFamilies = families.flatMap((family) => {
+    const scoredFamily = scoreFamily(preparedQuery, family);
+    return scoredFamily ? [scoredFamily] : [];
+  });
+
+  return keepCompleteTokenMatchesWhenAvailable(scoredFamilies)
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -297,7 +327,7 @@ function mergeExternalAttributes(
   }
 }
 
-function getExternalVariantStyle(
+function getVariantStyle(
   variant: AffarioProductSearchVariant
 ): string | null {
   const entry = Object.entries(variant.attributes).find(
@@ -348,9 +378,9 @@ function getStyleFamilyTitle(
   return [brand?.trim(), style.trim()].filter(Boolean).join(" ");
 }
 
-function splitExternalFamilyByStyle(
+export function splitAffarioProductFamilyByConsumerStyle(
   family: AffarioProductSearchFamily,
-  candidatesByAsin: ReadonlyMap<string, AffarioExternalProductCandidate>
+  metadataByAsin: ReadonlyMap<string, AffarioProductFamilyMetadata>
 ): AffarioProductSearchFamily[] {
   const styleGroups = new Map<
     string,
@@ -362,7 +392,7 @@ function splitExternalFamilyByStyle(
   const unclassifiedVariants: AffarioProductSearchVariant[] = [];
 
   for (const variant of family.variants) {
-    const style = getExternalVariantStyle(variant);
+    const style = getVariantStyle(variant);
     const styleKey = style ? getStyleFamilyKey(style, family.brand) : "";
 
     if (!style || !styleKey) {
@@ -390,7 +420,7 @@ function splitExternalFamilyByStyle(
     ({ asin }) => asin === family.representativeAsin
   );
   const representativeStyle = representativeVariant
-    ? getExternalVariantStyle(representativeVariant)
+    ? getVariantStyle(representativeVariant)
     : null;
   const representativeStyleKey = representativeStyle
     ? getStyleFamilyKey(representativeStyle, family.brand)
@@ -407,9 +437,9 @@ function splitExternalFamilyByStyle(
     ([styleKey, { variants, representativeStyle: style }]) => {
       const representative =
         variants.find(({ asin }) => asin === family.representativeAsin) ??
-        variants.find(({ asin }) => candidatesByAsin.has(asin)) ??
+        variants.find(({ asin }) => metadataByAsin.has(asin)) ??
         variants[0];
-      const candidate = candidatesByAsin.get(representative.asin);
+      const metadata = metadataByAsin.get(representative.asin);
       const usesOriginalRepresentative =
         representative.asin === family.representativeAsin;
 
@@ -417,13 +447,13 @@ function splitExternalFamilyByStyle(
         ...family,
         familyId: `${family.familyId}:style:${styleKey}`,
         title:
-          candidate?.title ?? getStyleFamilyTitle(family.brand, style),
-        brand: candidate?.brand ?? family.brand,
+          metadata?.title ?? getStyleFamilyTitle(family.brand, style),
+        brand: metadata?.brand ?? family.brand,
         model:
-          candidate?.model ??
+          metadata?.model ??
           (usesOriginalRepresentative ? family.model : null),
         imageUrl:
-          candidate?.imageUrl ??
+          metadata?.imageUrl ??
           (usesOriginalRepresentative ? family.imageUrl : null),
         representativeAsin: representative.asin,
         variants,
@@ -499,11 +529,11 @@ export function groupAffarioExternalProductCandidates(
       })),
     }))
     .flatMap((family) =>
-      splitExternalFamilyByStyle(family, candidatesByAsin)
+      splitAffarioProductFamilyByConsumerStyle(family, candidatesByAsin)
     );
 }
 
-function externalTokenMatches(
+function affarioSearchTokenMatches(
   queryToken: string,
   fieldToken: string
 ): boolean {
@@ -513,13 +543,13 @@ function externalTokenMatches(
   );
 }
 
-function countExternalTokenMatches(
+function countAffarioSearchTokenMatches(
   queryTokens: readonly string[],
   fieldTokens: ReadonlySet<string>
 ): number {
   return queryTokens.filter((queryToken) =>
     [...fieldTokens].some((fieldToken) =>
-      externalTokenMatches(queryToken, fieldToken)
+      affarioSearchTokenMatches(queryToken, fieldToken)
     )
   ).length;
 }
@@ -596,7 +626,7 @@ function scoreExternalFamily(
   addTokens(allTokens, variantTokens);
   addTokens(allTokens, asinTokens);
 
-  const matchedTokens = countExternalTokenMatches(
+  const matchedTokens = countAffarioSearchTokenMatches(
     eligibleQueryTokens,
     allTokens
   );
@@ -604,7 +634,7 @@ function scoreExternalFamily(
     preparedQuery.tokens
   );
   const allSignificantTokensMatch =
-    countExternalTokenMatches(significantQueryTokens, allTokens) ===
+    countAffarioSearchTokenMatches(significantQueryTokens, allTokens) ===
     significantQueryTokens.length;
   const exactAsin = asinTokens.has(preparedQuery.normalizedQuery);
 
@@ -612,19 +642,19 @@ function scoreExternalFamily(
     return null;
   }
 
-  const titleMatches = countExternalTokenMatches(
+  const titleMatches = countAffarioSearchTokenMatches(
     eligibleQueryTokens,
     titleTokens
   );
-  const brandMatches = countExternalTokenMatches(
+  const brandMatches = countAffarioSearchTokenMatches(
     eligibleQueryTokens,
     brandTokens
   );
-  const modelMatches = countExternalTokenMatches(
+  const modelMatches = countAffarioSearchTokenMatches(
     eligibleQueryTokens,
     modelTokens
   );
-  const variantMatches = countExternalTokenMatches(
+  const variantMatches = countAffarioSearchTokenMatches(
     eligibleQueryTokens,
     variantTokens
   );
@@ -685,14 +715,7 @@ export function rankAffarioExternalProductFamilies(
       );
       return scoredFamily ? [scoredFamily] : [];
     });
-  const hasCompleteMatch = scoredFamilies.some(
-    ({ allSignificantTokensMatch }) => allSignificantTokensMatch
-  );
-  const relevantFamilies = hasCompleteMatch
-    ? scoredFamilies.filter(
-        ({ allSignificantTokensMatch }) => allSignificantTokensMatch
-      )
-    : scoredFamilies;
+  const relevantFamilies = keepCompleteTokenMatchesWhenAvailable(scoredFamilies);
 
   return relevantFamilies
     .sort(

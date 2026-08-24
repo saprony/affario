@@ -5,6 +5,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import {
   prepareAffarioProductSearchQuery,
   rankAffarioProductFamilies,
+  splitAffarioProductFamilyByConsumerStyle,
 } from "@/lib/affarioProductSearch";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 import type {
@@ -119,6 +120,18 @@ function buildFamilies(
 ): AffarioProductSearchFamily[] {
   const families = new Map<string, WorkingFamily>();
   const familyIdByProductAsin = new Map<string, string>();
+  const metadataByAsin = new Map(
+    products.map((product) => [
+      product.asin,
+      {
+        asin: product.asin,
+        title: product.title,
+        brand: product.brand,
+        model: product.model,
+        imageUrl: product.image_url,
+      },
+    ])
+  );
 
   for (const product of products) {
     const familyId = product.parent_asin ?? product.asin;
@@ -186,6 +199,9 @@ function buildFamilies(
           ),
         })),
     }))
+    .flatMap((family) =>
+      splitAffarioProductFamilyByConsumerStyle(family, metadataByAsin)
+    )
     .sort((left, right) => left.familyId.localeCompare(right.familyId));
 }
 

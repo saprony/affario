@@ -6,6 +6,7 @@ import {
   prepareAffarioProductSearchQuery,
   rankAffarioExternalProductFamilies,
   rankAffarioProductFamilies,
+  splitAffarioProductFamilyByConsumerStyle,
 } from "./affarioProductSearch";
 import type {
   AffarioExternalProductCandidate,
@@ -167,6 +168,94 @@ test("suddivide Style diversi senza dipendere da marchi o modelli noti", () => {
   );
 });
 
+test("catalogo locale ed esterno costruiscono la stessa famiglia consumer", () => {
+  const variants = [
+    variant("B0AQUAROLL", "Aqua10 Roller"),
+    variant("B0AQUACOMP", "Aqua10 Ultra Roller Complete"),
+    variant("B0AQUABLCK", "Aqua10 Ultra Roller Complete Nero"),
+    variant("B0AQUATRCK", "Aqua10 Ultra Track Complete"),
+    variant("B0MATRIXPR", "Matrix10 Pro"),
+    variant("B0MATRIXUL", "Matrix10 Ultra"),
+  ];
+  const parentFamily: AffarioProductSearchFamily = {
+    familyId: "GENERIC-PARENT",
+    title: "Example Matrix10 Ultra aspirapolvere",
+    brand: "Example",
+    model: "M10",
+    imageUrl: null,
+    representativeAsin: "B0MATRIXUL",
+    parentAsin: "GENERIC-PARENT",
+    variants,
+  };
+  const metadataByAsin = new Map([
+    [
+      "B0MATRIXUL",
+      {
+        asin: "B0MATRIXUL",
+        title: "Example Matrix10 Ultra aspirapolvere",
+        brand: "Example",
+        model: "M10",
+        imageUrl: null,
+      },
+    ],
+  ]);
+  const localFamilies = splitAffarioProductFamilyByConsumerStyle(
+    parentFamily,
+    metadataByAsin
+  );
+  const localRanked = rankAffarioProductFamilies(
+    prepareAffarioProductSearchQuery("example matrix"),
+    localFamilies
+  );
+  const externalFamilies = groupAffarioExternalProductCandidates([
+    candidate({
+      asin: "B0MATRIXUL",
+      title: "Example Matrix10 Ultra aspirapolvere",
+      brand: "Example",
+      model: "M10",
+      parentAsin: "GENERIC-PARENT",
+      variants,
+    }),
+  ]);
+  const externalRanked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("example matrix"),
+    externalFamilies
+  );
+  const localMatrix = localRanked[0];
+  const externalMatrix = externalRanked[0];
+  const getVariantIdentity = (family: AffarioProductSearchFamily) =>
+    family.variants
+      .map(({ asin, attributes }) => ({
+        asin,
+        style: attributes.Style,
+      }))
+      .sort((left, right) => left.asin.localeCompare(right.asin));
+
+  assert.equal(localRanked.length, 1);
+  assert.equal(externalRanked.length, 1);
+  assert.deepEqual(getVariantIdentity(localMatrix), [
+    { asin: "B0MATRIXPR", style: "Matrix10 Pro" },
+    { asin: "B0MATRIXUL", style: "Matrix10 Ultra" },
+  ]);
+  assert.deepEqual(
+    getVariantIdentity(externalMatrix),
+    getVariantIdentity(localMatrix)
+  );
+  assert.equal(
+    localMatrix.variants.some(({ attributes }) =>
+      attributes.Style.startsWith("Aqua10")
+    ),
+    false
+  );
+  assert.deepEqual(
+    localFamilies
+      .flatMap(({ variants: familyVariants }) => familyVariants)
+      .map(({ asin }) => asin)
+      .sort(),
+    variants.map(({ asin }) => asin).sort()
+  );
+});
+
 test("la famiglia locale iPhone resta unica con nove varianti", () => {
   const variants = Array.from({ length: 9 }, (_, index) => ({
     asin: `IPHONE-${index + 1}`,
@@ -185,11 +274,16 @@ test("la famiglia locale iPhone resta unica con nove varianti", () => {
     parentAsin: "IPHONE-PARENT",
     variants,
   };
+  const consumerFamilies = splitAffarioProductFamilyByConsumerStyle(
+    family,
+    new Map()
+  );
   const ranked = rankAffarioProductFamilies(
     prepareAffarioProductSearchQuery("iphone"),
-    [family]
+    consumerFamilies
   );
 
+  assert.equal(consumerFamilies.length, 1);
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].variants.length, 9);
 });

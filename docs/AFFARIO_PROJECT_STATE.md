@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 23 agosto 2026.
+Ultimo aggiornamento: 24 agosto 2026.
 
 ## 1. Scopo e autorità
 
@@ -25,8 +25,8 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 038**, validata tecnicamente e funzionalmente in locale.
-- La funzione successiva alla 038 non è ancora avviata.
+- Ultima funzione completata: **FUNZIONE 039**, validata tecnicamente e funzionalmente in locale.
+- La funzione successiva alla 039 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -100,7 +100,12 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - In sviluppo `app/page.tsx` carica `DemoHome`.
 - Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` o capacità storage come **Capacità**, `Style` come **Configurazione**.
-- La variante selezionata conserva internamente l'ASIN, ma non avvia ancora Buy Box, lookup prodotto o analisi.
+- La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
+- La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
+- La UI usa come prezzo attuale soltanto la Buy Box / Featured Offer, senza fallback `AMAZON` o `NEW`, e mostra prezzo attuale, minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
+- Se la Buy Box è assente, la UI non mostra `0 €`; gli errori terminano il loading e consentono esclusivamente un retry volontario, senza retry automatici nascosti.
+- La lookup esegue al massimo una seconda lettura iniziale DB read-only prima di Keepa; non esiste alcun retry automatico Keepa.
+- Nessun Affario Score, Consiglio AFFARIO, Risparmio Potenziale o alert è ancora collegato a questi dati reali.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -110,12 +115,13 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Il servizio locale è `searchAffarioProducts(query)`.
 - L'orchestratore server-side `searchAffarioProductsWithFallback(query)` applica il flusso local-first: catalogo AFFARIO e, soltanto senza risultati locali, fallback al provider esterno.
 - La ricerca normalizza e tokenizza, applica ranking leggibile e privilegia i risultati che soddisfano tutti i token significativi della query, senza riempire i risultati principali con match parziali quando esistono match completi.
-- Il raggruppamento provider-agnostic produce famiglie consumer coerenti e ricompone una variante per ASIN con il proprio insieme di attributi.
+- Il catalogo locale e `EXTERNAL_PROVIDER` condividono la stessa regola provider-agnostic di costruzione delle famiglie consumer e ricompongono ogni variante con il proprio ASIN e insieme di attributi.
 - `parentAsin` resta un'informazione tecnica e non definisce necessariamente una singola famiglia consumer; `Style` può discriminare sotto-famiglie quando il parent Amazon comprende modelli commercialmente distinti.
-- Validazione locale `dreame matrix`: Matrix10 Ultra e Matrix10 Pro restano nella stessa famiglia; L40s e L50s sono separati; X60 ed ECOVACS sono esclusi dai match completi.
+- Validazione reale del catalogo persistito: `dreame matrix` → `AFFARIO_CATALOG` → una famiglia consumer con Matrix10 Pro e Matrix10 Ultra.
 - Validazione locale `iphone`: una sola famiglia con 9 varianti.
 - Il flusso approvato è: **query → famiglie consumer → variante → ASIN**.
 - L'utente non deve conoscere l'ASIN o il titolo Amazon completo.
+- La selezione di un prodotto esterno non ancora persistito passa attraverso la pipeline esistente di lookup e persistenza.
 - Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES`; nell'orchestratore questo esito attiva il fallback provider esterno.
 - Esiste un provider server-only per la ricerca keyword Keepa e la trasformazione dei Product Object in candidati AFFARIO provider-agnostic.
 - Il provider Keepa serve esclusivamente alla scoperta di prodotti non presenti nel catalogo locale: è raggiungibile soltanto tramite l'orchestratore server-side e non dispone di un endpoint pubblico proprio.
@@ -264,8 +270,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 036 | Ricerca local-first con fallback provider esterno — commit `b6778d87bc9de08958802cb7ed1256032d188df8` |
 | 037 | API ricerca collegata all'orchestratore local-first, validata manualmente in locale |
 | 038 | DemoHome collegata alla ricerca reale con selezione per famiglia consumer, variante e ASIN |
+| 039 | Completata e validata — variante esatta collegata su azione esplicita a Buy Box e storico 90 giorni reali |
 
-Totale associazioni registrate: **30**.
+Totale associazioni registrate: **31**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -405,7 +412,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **038**, validata tecnicamente e funzionalmente in locale.
-- La funzione successiva alla 038 non è ancora avviata.
+- Ultima funzione completata: **039**, validata tecnicamente e funzionalmente in locale.
+- Funzione successiva: **non avviata**.
 
-La Funzione 038 collega `DemoHome` alla ricerca reale fino alla selezione interna dell'ASIN; Buy Box, analisi, `PublicHome`, database, provider e deploy restano invariati.
+La Funzione 039 non collega ancora Affario Score, Consiglio AFFARIO, Risparmio Potenziale o alert; `PublicHome`, deploy e funzioni successive restano invariati.

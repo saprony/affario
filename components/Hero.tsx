@@ -5,6 +5,7 @@ type HeroProps = {
   setQuery: (value: string) => void;
   onSearch: () => void;
   isLoading: boolean;
+  isDisabled: boolean;
 };
 
 export default function Hero({
@@ -12,6 +13,7 @@ export default function Hero({
   setQuery,
   onSearch,
   isLoading,
+  isDisabled,
 }: HeroProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -55,7 +57,7 @@ export default function Hero({
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isDisabled}
             className="min-h-12 rounded-xl bg-green-600 px-6 font-bold text-white disabled:cursor-wait disabled:bg-green-400"
           >
             {isLoading ? "Ricerca in corso..." : "Cerca prodotto"}
