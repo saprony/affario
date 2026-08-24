@@ -15,6 +15,7 @@ import type { AffarioProductAnalysisData } from "../types/productAnalysis";
 function createPayload(overrides?: {
   status?: "AVAILABLE" | "UNAVAILABLE";
   currentPrice?: number | null;
+  priceHighlight?: AffarioAdvice["priceHighlight"];
 }) {
   return {
     data: {
@@ -41,7 +42,8 @@ function createPayload(overrides?: {
           "Il prezzo attuale è molto vicino ai minimi recenti e sotto la media degli ultimi 90 giorni.",
         tone: "POSITIVE",
         recommendation: "BUY_NOW",
-        priceHighlight: "LOWEST_12_MONTHS",
+        priceHighlight:
+          overrides?.priceHighlight ?? "LOWEST_12_MONTHS",
       },
       source: "DATABASE_CACHE",
       cacheHit: true,
@@ -87,6 +89,29 @@ test("una doppia azione durante il loading produce una sola richiesta", async ()
 
   assert.equal(result.asin, "B0FQGPJCJK");
   assert.equal(gate.inFlight, false);
+});
+
+test("mantiene il riconoscimento da quando disponibile nella presentazione", async () => {
+  const requester: ProductAnalysisRequester = async () => ({
+    ok: true,
+    json: async () =>
+      createPayload({ priceHighlight: "LOWEST_SINCE_AVAILABLE" }),
+  });
+  const result = await requestProductAnalysisOnce(
+    "B0FQGPJCJK",
+    { inFlight: false },
+    requester
+  );
+
+  assert.ok(result);
+  assert.equal(
+    result.advice.priceHighlight,
+    "LOWEST_SINCE_AVAILABLE"
+  );
+  assert.equal(
+    getProductAnalysisPresentation(result).advice.priceHighlight,
+    "LOWEST_SINCE_AVAILABLE"
+  );
 });
 
 test("espone al client soltanto i dati necessari alla presentazione", async () => {

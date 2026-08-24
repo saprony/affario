@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 24 agosto 2026.
+Ultimo aggiornamento: 25 agosto 2026.
 
 ## 1. Scopo e autorità
 
@@ -25,8 +25,8 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 040**, validata tecnicamente e manualmente in locale.
-- La funzione successiva alla 040 non è ancora avviata.
+- Ultima funzione completata: **FUNZIONE 041**, validata tecnicamente.
+- La funzione successiva alla 041 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -110,7 +110,12 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Con meno di 4 osservazioni valide o meno di 7 giorni di copertura, il consiglio espone **Dati insufficienti** senza Score numerico né verdetto Compra/Aspetta.
 - Le raccomandazioni operative tipizzate sono `BUY_NOW`, `BUY`, `NEUTRAL`, `WAIT` e `NONE`; la CTA Amazon è coerente con la raccomandazione e usa il link affiliato dell'ASIN esatto analizzato.
 - Il Consiglio AFFARIO entra con una micro-animazione discreta e finita, disabilitata quando il sistema richiede `prefers-reduced-motion`.
-- Il badge **PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI** appare soltanto con copertura annuale Buy Box affidabile; la UI non usa impropriamente la dicitura **Minimo storico**.
+- La **FUNZIONE 041 è completata** con la gerarchia `LOWEST_12_MONTHS` → `LOWEST_SINCE_AVAILABLE` → `null`.
+- `LOWEST_SINCE_AVAILABLE` è assegnato solo quando l'inizio dello storico utile è certificabile conservativamente tramite `trackingSince`, `listedSince`, coerenza raw/snapshot della stessa acquisizione, completezza della serie Buy Box normalizzata, assenza di troncamento e soglie minime di copertura e osservazioni.
+- La prima riga AFFARIO e la data del primo lookup non costituiscono prova sufficiente dell'inizio dello storico.
+- Le etichette consumer definitive sono **🏆 PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI** per `LOWEST_12_MONTHS` e **🏆 PREZZO PIÙ BASSO DI SEMPRE** per `LOWEST_SINCE_AVAILABLE`; la UI non usa la dicitura impropria **Minimo storico**.
+- Gli highlight restano fatti sul prezzo e non modificano Affario Score, fascia, raccomandazione o CTA Amazon.
+- Verifica reale: iPhone con circa 346,42 giorni, inizio certificabile e `LOWEST_SINCE_AVAILABLE`; Dreame con circa 166,52 giorni, inizio non certificabile e highlight `null`; zero chiamate Keepa aggiuntive.
 - La validazione manuale finale della UI è completata.
 - Risparmio Potenziale e alert non sono ancora collegati al Consiglio AFFARIO reale.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
@@ -279,8 +284,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 038 | DemoHome collegata alla ricerca reale con selezione per famiglia consumer, variante e ASIN |
 | 039 | Completata e validata — variante esatta collegata su azione esplicita a Buy Box e storico 90 giorni reali |
 | 040 | Completata e validata — primo Consiglio AFFARIO reale, raccomandazione operativa e CTA Amazon per la variante esatta |
+| 041 | Completata — highlight coverage-aware per minimo 12 mesi e minimo certificabile da quando disponibile |
 
-Totale associazioni registrate: **32**.
+Totale associazioni registrate: **33**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -420,7 +426,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **040**, validata tecnicamente e manualmente in locale.
+- Ultima funzione completata: **041**, validata tecnicamente.
 - Funzione successiva: **non avviata**.
 
 Risparmio Potenziale e alert non sono ancora integrati; `PublicHome`, deploy e funzioni successive restano invariati.

@@ -2,7 +2,10 @@ import {
   getProductAnalysisPresentation,
   type ProductAnalysisPresentation,
 } from "@/lib/productAnalysis";
-import { AFFARIO_LOWEST_12_MONTHS_LABEL } from "@/lib/affarioAdvice";
+import {
+  AFFARIO_LOWEST_12_MONTHS_LABEL,
+  AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
+} from "@/lib/affarioAdvice";
 import type {
   AffarioAdviceRecommendation,
   AffarioAdviceTone,
@@ -35,6 +38,11 @@ const RECOMMENDATION_TEXT: Record<
   WAIT: "ASPETTA",
   NONE: null,
 };
+
+const PRICE_HIGHLIGHT_TEXT = {
+  LOWEST_12_MONTHS: AFFARIO_LOWEST_12_MONTHS_LABEL,
+  LOWEST_SINCE_AVAILABLE: AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
+} as const;
 
 type AmazonCta = NonNullable<ProductAnalysisPresentation["amazonCta"]>;
 
@@ -122,9 +130,9 @@ export default function ProductPriceAnalysis({
         <p className="text-sm font-extrabold uppercase tracking-wide">
           Consiglio AFFARIO
         </p>
-        {presentation.advice.priceHighlight === "LOWEST_12_MONTHS" && (
+        {presentation.advice.priceHighlight && (
           <p className="mt-3 inline-flex rounded-full bg-green-800 px-3 py-1.5 text-sm font-black text-white">
-            {AFFARIO_LOWEST_12_MONTHS_LABEL}
+            {PRICE_HIGHLIGHT_TEXT[presentation.advice.priceHighlight]}
           </p>
         )}
         {recommendationText ? (

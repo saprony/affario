@@ -2,6 +2,10 @@ import type { PriceObservation } from "@/services/priceHistory";
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
+export const MINIMUM_SINCE_AVAILABLE_HISTORY_OBSERVATIONS = 4;
+export const MINIMUM_SINCE_AVAILABLE_HISTORY_COVERAGE_DAYS = 30;
+export const FULL_YEAR_HISTORY_COVERAGE_DAYS = 365;
+
 export type PriceHistoryQualityPoint = {
   price: number;
   observedAt: string;
@@ -21,6 +25,12 @@ export type PriceHistoryWindowMinimum = {
   minimumPrice: number | null;
   hasReliableCoverage: boolean;
 };
+
+export type PriceHistorySinceAvailableMinimum =
+  PriceHistoryWindowMinimum & {
+    observationCount: number;
+    coverageDays: number;
+  };
 
 export type PriceHistoryAnalysis = {
   productId: string;
@@ -136,6 +146,87 @@ export function analyzePriceHistoryWindowMinimum(input: {
     minimumPrice:
       minimumPrice === Number.POSITIVE_INFINITY ? null : minimumPrice,
     hasReliableCoverage: true,
+  };
+}
+
+export function analyzePriceHistorySinceAvailableMinimum(input: {
+  observations: readonly PriceHistoryWindowPoint[];
+  trackingStartedAt: string | null;
+  listedAt: string | null;
+  windowEnd: string;
+  isCompleteSeries: boolean;
+  isTruncated: boolean;
+}): PriceHistorySinceAvailableMinimum {
+  const trackingStartedAtTimestamp = Date.parse(
+    input.trackingStartedAt ?? ""
+  );
+  const listedAtTimestamp = Date.parse(input.listedAt ?? "");
+  const windowEndTimestamp = Date.parse(input.windowEnd);
+  const unavailable = {
+    minimumPrice: null,
+    hasReliableCoverage: false,
+    observationCount: 0,
+    coverageDays: 0,
+  };
+
+  if (
+    input.isTruncated ||
+    !input.isCompleteSeries ||
+    !Number.isFinite(trackingStartedAtTimestamp) ||
+    !Number.isFinite(listedAtTimestamp) ||
+    !Number.isFinite(windowEndTimestamp) ||
+    trackingStartedAtTimestamp > listedAtTimestamp ||
+    listedAtTimestamp >= windowEndTimestamp
+  ) {
+    return unavailable;
+  }
+
+  const coverageDays =
+    (windowEndTimestamp - listedAtTimestamp) / MILLISECONDS_PER_DAY;
+
+  if (
+    coverageDays < MINIMUM_SINCE_AVAILABLE_HISTORY_COVERAGE_DAYS ||
+    coverageDays >= FULL_YEAR_HISTORY_COVERAGE_DAYS
+  ) {
+    return { ...unavailable, coverageDays };
+  }
+
+  let observationCount = 0;
+  let minimumPrice = Number.POSITIVE_INFINITY;
+
+  for (const observation of input.observations) {
+    const observedAtTimestamp = Date.parse(observation.observedAt);
+
+    if (
+      !Number.isFinite(observedAtTimestamp) ||
+      observedAtTimestamp < listedAtTimestamp ||
+      observedAtTimestamp > windowEndTimestamp ||
+      typeof observation.price !== "number" ||
+      !Number.isFinite(observation.price) ||
+      observation.price <= 0
+    ) {
+      continue;
+    }
+
+    observationCount += 1;
+    minimumPrice = Math.min(minimumPrice, observation.price);
+  }
+
+  if (
+    observationCount < MINIMUM_SINCE_AVAILABLE_HISTORY_OBSERVATIONS
+  ) {
+    return {
+      ...unavailable,
+      observationCount,
+      coverageDays,
+    };
+  }
+
+  return {
+    minimumPrice,
+    hasReliableCoverage: true,
+    observationCount,
+    coverageDays,
   };
 }
 

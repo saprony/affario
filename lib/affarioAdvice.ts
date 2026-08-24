@@ -9,7 +9,9 @@ import type {
 export const AFFARIO_MINIMUM_HISTORY_OBSERVATIONS = 4;
 export const AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS = 7;
 export const AFFARIO_LOWEST_12_MONTHS_LABEL =
-  "PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI";
+  "🏆 PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI";
+export const AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL =
+  "🏆 PREZZO PIÙ BASSO DI SEMPRE";
 
 export type AffarioAdviceInput = {
   currentPrice: number | null;
@@ -19,6 +21,8 @@ export type AffarioAdviceInput = {
   coverageDays: number;
   minimumPrice365Days: number | null;
   hasReliable365DayCoverage: boolean;
+  minimumPriceSinceAvailable: number | null;
+  hasReliableSinceAvailableCoverage: boolean;
 };
 
 export type AffarioAdviceBand = {
@@ -167,17 +171,30 @@ export function getAffarioPriceHighlight(input: {
   currentPrice: number | null;
   minimumPrice365Days: number | null;
   hasReliable365DayCoverage: boolean;
+  minimumPriceSinceAvailable: number | null;
+  hasReliableSinceAvailableCoverage: boolean;
 }): AffarioPriceHighlight {
-  if (
-    !input.hasReliable365DayCoverage ||
-    !isPositiveFiniteNumber(input.currentPrice) ||
-    !isPositiveFiniteNumber(input.minimumPrice365Days) ||
-    input.currentPrice > input.minimumPrice365Days
-  ) {
+  if (!isPositiveFiniteNumber(input.currentPrice)) {
     return null;
   }
 
-  return "LOWEST_12_MONTHS";
+  if (
+    input.hasReliable365DayCoverage &&
+    isPositiveFiniteNumber(input.minimumPrice365Days) &&
+    input.currentPrice <= input.minimumPrice365Days
+  ) {
+    return "LOWEST_12_MONTHS";
+  }
+
+  if (
+    input.hasReliableSinceAvailableCoverage &&
+    isPositiveFiniteNumber(input.minimumPriceSinceAvailable) &&
+    input.currentPrice <= input.minimumPriceSinceAvailable
+  ) {
+    return "LOWEST_SINCE_AVAILABLE";
+  }
+
+  return null;
 }
 
 export function createAffarioAdvice(

@@ -16,5 +16,9 @@ export function buildAffarioProductAdvice(
     minimumPrice365Days: product.buyBox365Days.minimumInEuros,
     hasReliable365DayCoverage:
       product.buyBox365Days.hasReliableCoverage,
+    minimumPriceSinceAvailable:
+      product.buyBoxSinceAvailable.minimumInEuros,
+    hasReliableSinceAvailableCoverage:
+      product.buyBoxSinceAvailable.hasReliableCoverage,
   });
 }

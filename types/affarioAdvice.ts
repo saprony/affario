@@ -20,7 +20,10 @@ export type AffarioAdviceRecommendation =
   | "WAIT"
   | "NONE";
 
-export type AffarioPriceHighlight = "LOWEST_12_MONTHS" | null;
+export type AffarioPriceHighlight =
+  | "LOWEST_12_MONTHS"
+  | "LOWEST_SINCE_AVAILABLE"
+  | null;
 
 export type AffarioAdvice = {
   status: AffarioAdviceStatus;

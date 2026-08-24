@@ -4,6 +4,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 
 import {
   analyzePriceHistoryQuality,
+  analyzePriceHistorySinceAvailableMinimum,
   analyzePriceHistoryWindowMinimum,
   type PriceHistoryQuality,
 } from "@/lib/analyzePriceHistory";
@@ -25,6 +26,8 @@ const THREE_HUNDRED_SIXTY_FIVE_DAYS_IN_MILLISECONDS =
 const BUY_BOX_HISTORY_RELIABLE_READ_LIMIT = 5_000;
 const BUY_BOX_HISTORY_READ_LIMIT =
   BUY_BOX_HISTORY_RELIABLE_READ_LIMIT + 1;
+const KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX = 18;
+const KEEPA_TIME_MINUTES_OFFSET = 21_564_000;
 
 export type AffarioProductLookupSource =
   | "DATABASE_CACHE"
@@ -73,6 +76,13 @@ export type AffarioLookupBuyBox365Days = {
   hasReliableCoverage: boolean;
 };
 
+export type AffarioLookupBuyBoxSinceAvailable = {
+  minimumInEuros: number | null;
+  hasReliableCoverage: boolean;
+  observationCount: number;
+  coverageDays: number;
+};
+
 export type AffarioProductLookupResult = {
   asin: string;
   product: AffarioLookupProduct;
@@ -80,6 +90,7 @@ export type AffarioProductLookupResult = {
   buyBox90Days: AffarioLookupBuyBox90Days;
   buyBoxHistory90Days: PriceHistoryQuality;
   buyBox365Days: AffarioLookupBuyBox365Days;
+  buyBoxSinceAvailable: AffarioLookupBuyBoxSinceAvailable;
   currency: string;
   lastBuyBoxUpdate: string | null;
   buyBoxAgeMinutes: number | null;
@@ -146,8 +157,15 @@ type RawLatestRow = {
 };
 
 type BuyBoxHistoryRow = {
+  keepa_time: number;
   total_cents: number | null;
   observed_at: string;
+};
+
+type KeepaHistoryStartEvidence = {
+  trackingStartedAt: string | null;
+  listedAt: string | null;
+  isCompleteSeries: boolean;
 };
 
 type StoredLookupData = {
@@ -212,6 +230,157 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function keepaTimeToIso(value: unknown): string | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    return null;
+  }
+
+  const date = new Date(
+    (value + KEEPA_TIME_MINUTES_OFFSET) * 60_000
+  );
+
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function getKeepaHistoryStartEvidence(input: {
+  rawLatest: RawLatestRow | null;
+  snapshotRequestedAt: string;
+  normalizedHistory: readonly BuyBoxHistoryRow[];
+}): KeepaHistoryStartEvidence {
+  const unavailable: KeepaHistoryStartEvidence = {
+    trackingStartedAt: null,
+    listedAt: null,
+    isCompleteSeries: false,
+  };
+  const { rawLatest } = input;
+
+  if (
+    !rawLatest ||
+    Date.parse(rawLatest.requested_at) !==
+      Date.parse(input.snapshotRequestedAt) ||
+    !isJsonObject(rawLatest.product_object)
+  ) {
+    return unavailable;
+  }
+
+  const trackingStartedAt = keepaTimeToIso(
+    rawLatest.product_object.trackingSince
+  );
+  const listedAt = keepaTimeToIso(rawLatest.product_object.listedSince);
+  const rawCsv = rawLatest.product_object.csv;
+  const rawSeries = Array.isArray(rawCsv)
+    ? rawCsv[KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX]
+    : undefined;
+
+  if (
+    !trackingStartedAt ||
+    !listedAt ||
+    !Array.isArray(rawSeries) ||
+    rawSeries.length === 0 ||
+    rawSeries.length % 3 !== 0 ||
+    !rawSeries.every(
+      (value) => typeof value === "number" && Number.isSafeInteger(value)
+    )
+  ) {
+    return unavailable;
+  }
+
+  const listedSinceKeepaTime = rawLatest.product_object.listedSince;
+  const snapshotRequestedAtTimestamp = Date.parse(
+    input.snapshotRequestedAt
+  );
+
+  if (
+    typeof listedSinceKeepaTime !== "number" ||
+    !Number.isSafeInteger(listedSinceKeepaTime) ||
+    !Number.isFinite(snapshotRequestedAtTimestamp)
+  ) {
+    return unavailable;
+  }
+
+  const rawHistory = new Map<
+    number,
+    { totalCents: number | null; observedAt: string }
+  >();
+
+  for (let index = 0; index < rawSeries.length; index += 3) {
+    const keepaTime = rawSeries[index];
+    const priceCents = rawSeries[index + 1];
+    const shippingCents = rawSeries[index + 2];
+    const observedAt = keepaTimeToIso(keepaTime);
+
+    if (!observedAt) {
+      return unavailable;
+    }
+
+    if (
+      keepaTime < listedSinceKeepaTime ||
+      Date.parse(observedAt) > snapshotRequestedAtTimestamp
+    ) {
+      continue;
+    }
+
+    const point = {
+      totalCents:
+        priceCents >= 0 && shippingCents >= 0
+          ? priceCents + shippingCents
+          : null,
+      observedAt,
+    };
+    const existing = rawHistory.get(keepaTime);
+
+    if (
+      existing &&
+      (existing.totalCents !== point.totalCents ||
+        existing.observedAt !== point.observedAt)
+    ) {
+      return unavailable;
+    }
+
+    rawHistory.set(keepaTime, point);
+  }
+
+  const normalizedHistory = new Map(
+    input.normalizedHistory
+      .filter(
+        (point) =>
+          point.keepa_time >= listedSinceKeepaTime &&
+          Date.parse(point.observed_at) <= snapshotRequestedAtTimestamp
+      )
+      .map((point) => [point.keepa_time, point])
+  );
+
+  if (
+    rawHistory.size === 0 ||
+    rawHistory.size !== normalizedHistory.size
+  ) {
+    return unavailable;
+  }
+
+  for (const [keepaTime, rawPoint] of rawHistory) {
+    const normalizedPoint = normalizedHistory.get(keepaTime);
+
+    if (
+      !normalizedPoint ||
+      normalizedPoint.total_cents !== rawPoint.totalCents ||
+      Date.parse(normalizedPoint.observed_at) !==
+        Date.parse(rawPoint.observedAt)
+    ) {
+      return unavailable;
+    }
+  }
+
+  return {
+    trackingStartedAt,
+    listedAt,
+    isCompleteSeries: true,
+  };
+}
+
 async function readStoredLookupData(
   asin: string,
   nowMilliseconds: number
@@ -261,7 +430,7 @@ async function readStoredLookupData(
       .maybeSingle(),
     supabase
       .from("buybox_price_history")
-      .select("total_cents,observed_at")
+      .select("keepa_time,total_cents,observed_at")
       .eq("asin", asin)
       .gte("observed_at", annualWindowStartedAt)
       .lte("observed_at", annualWindowEndedAt)
@@ -269,7 +438,7 @@ async function readStoredLookupData(
       .limit(BUY_BOX_HISTORY_READ_LIMIT),
     supabase
       .from("buybox_price_history")
-      .select("total_cents,observed_at")
+      .select("keepa_time,total_cents,observed_at")
       .eq("asin", asin)
       .lt("observed_at", annualWindowStartedAt)
       .order("observed_at", { ascending: false })
@@ -382,6 +551,25 @@ function buildLookupResult(
     windowEnd: buyBoxHistory365DaysEndedAt,
     isTruncated: buyBoxHistory365DaysIsTruncated,
   });
+  const historyStartEvidence = getKeepaHistoryStartEvidence({
+    rawLatest,
+    snapshotRequestedAt: snapshot.requested_at,
+    normalizedHistory: [
+      ...(buyBoxHistory365DaysBaseline
+        ? [buyBoxHistory365DaysBaseline]
+        : []),
+      ...buyBoxHistory365Days,
+    ],
+  });
+  const buyBoxSinceAvailable =
+    analyzePriceHistorySinceAvailableMinimum({
+      observations: buyBoxHistoryPoints,
+      trackingStartedAt: historyStartEvidence.trackingStartedAt,
+      listedAt: historyStartEvidence.listedAt,
+      windowEnd: snapshot.requested_at,
+      isCompleteSeries: historyStartEvidence.isCompleteSeries,
+      isTruncated: buyBoxHistory365DaysIsTruncated,
+    });
 
   return {
     asin: product.asin,
@@ -436,6 +624,13 @@ function buildLookupResult(
     buyBox365Days: {
       minimumInEuros: buyBox365Days.minimumPrice,
       hasReliableCoverage: buyBox365Days.hasReliableCoverage,
+    },
+    buyBoxSinceAvailable: {
+      minimumInEuros: buyBoxSinceAvailable.minimumPrice,
+      hasReliableCoverage:
+        buyBoxSinceAvailable.hasReliableCoverage,
+      observationCount: buyBoxSinceAvailable.observationCount,
+      coverageDays: buyBoxSinceAvailable.coverageDays,
     },
     currency: snapshot.currency,
     lastBuyBoxUpdate,

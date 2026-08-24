@@ -77,6 +77,7 @@ const AFFARIO_ADVICE_RECOMMENDATIONS =
 
 const AFFARIO_PRICE_HIGHLIGHTS = new Set<AffarioPriceHighlight>([
   "LOWEST_12_MONTHS",
+  "LOWEST_SINCE_AVAILABLE",
   null,
 ]);
 

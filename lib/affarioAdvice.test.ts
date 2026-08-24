@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
   analyzePriceHistoryQuality,
+  analyzePriceHistorySinceAvailableMinimum,
   analyzePriceHistoryWindowMinimum,
 } from "./analyzePriceHistory";
 import {
   AFFARIO_LOWEST_12_MONTHS_LABEL,
+  AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
   calculateAffarioScore,
   createAffarioAdvice,
   getAffarioAdviceBand,
@@ -19,6 +21,8 @@ const RELIABLE_HISTORY = {
   coverageDays: 7,
   minimumPrice365Days: null,
   hasReliable365DayCoverage: false,
+  minimumPriceSinceAvailable: null,
+  hasReliableSinceAvailableCoverage: false,
 };
 
 test("prezzo attuale uguale al minimo produce score 100", () => {
@@ -82,6 +86,8 @@ test("storico insufficiente non espone score o verdetto forte", () => {
       averagePrice90Days: 100,
       minimumPrice365Days: null,
       hasReliable365DayCoverage: false,
+      minimumPriceSinceAvailable: null,
+      hasReliableSinceAvailableCoverage: false,
       ...historyQuality,
     });
 
@@ -119,6 +125,8 @@ test("il riconoscimento annuale non introduce una raccomandazione con Score insu
     coverageDays: 0,
     minimumPrice365Days: 80,
     hasReliable365DayCoverage: true,
+    minimumPriceSinceAvailable: null,
+    hasReliableSinceAvailableCoverage: false,
   });
 
   assert.equal(advice.status, "INSUFFICIENT_DATA");
@@ -149,13 +157,15 @@ test("mapping raccomandazioni conserva tutte le soglie operative", () => {
 test("riconosce il minimo annuale solo con copertura affidabile", () => {
   assert.equal(
     AFFARIO_LOWEST_12_MONTHS_LABEL,
-    "PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI"
+    "🏆 PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI"
   );
   assert.equal(
     getAffarioPriceHighlight({
       currentPrice: 80,
       minimumPrice365Days: 80,
       hasReliable365DayCoverage: true,
+      minimumPriceSinceAvailable: null,
+      hasReliableSinceAvailableCoverage: false,
     }),
     "LOWEST_12_MONTHS"
   );
@@ -164,6 +174,8 @@ test("riconosce il minimo annuale solo con copertura affidabile", () => {
       currentPrice: 79,
       minimumPrice365Days: 80,
       hasReliable365DayCoverage: true,
+      minimumPriceSinceAvailable: null,
+      hasReliableSinceAvailableCoverage: false,
     }),
     "LOWEST_12_MONTHS"
   );
@@ -172,6 +184,8 @@ test("riconosce il minimo annuale solo con copertura affidabile", () => {
       currentPrice: 80,
       minimumPrice365Days: 70,
       hasReliable365DayCoverage: true,
+      minimumPriceSinceAvailable: null,
+      hasReliableSinceAvailableCoverage: false,
     }),
     null
   );
@@ -180,9 +194,166 @@ test("riconosce il minimo annuale solo con copertura affidabile", () => {
       currentPrice: 80,
       minimumPrice365Days: 80,
       hasReliable365DayCoverage: false,
+      minimumPriceSinceAvailable: null,
+      hasReliableSinceAvailableCoverage: false,
     }),
     null
   );
+});
+
+test("riconosce il minimo da quando disponibile solo con inizio e serie certificati", () => {
+  const minimum = analyzePriceHistorySinceAvailableMinimum({
+    observations: [
+      { price: null, observedAt: "2026-01-01T00:00:00.000Z" },
+      { price: 100, observedAt: "2026-01-10T00:00:00.000Z" },
+      { price: 95, observedAt: "2026-02-01T00:00:00.000Z" },
+      { price: 90, observedAt: "2026-03-01T00:00:00.000Z" },
+      { price: 80, observedAt: "2026-03-31T00:00:00.000Z" },
+    ],
+    trackingStartedAt: "2025-12-31T12:00:00.000Z",
+    listedAt: "2026-01-01T00:00:00.000Z",
+    windowEnd: "2026-04-01T00:00:00.000Z",
+    isCompleteSeries: true,
+    isTruncated: false,
+  });
+
+  assert.deepEqual(minimum, {
+    minimumPrice: 80,
+    hasReliableCoverage: true,
+    observationCount: 4,
+    coverageDays: 90,
+  });
+  assert.equal(
+    AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
+    "🏆 PREZZO PIÙ BASSO DI SEMPRE"
+  );
+  assert.equal(
+    getAffarioPriceHighlight({
+      currentPrice: 80,
+      minimumPrice365Days: null,
+      hasReliable365DayCoverage: false,
+      minimumPriceSinceAvailable: minimum.minimumPrice,
+      hasReliableSinceAvailableCoverage:
+        minimum.hasReliableCoverage,
+    }),
+    "LOWEST_SINCE_AVAILABLE"
+  );
+});
+
+test("non certifica un intervallo breve senza prova dell'inizio della serie", () => {
+  const minimum = analyzePriceHistorySinceAvailableMinimum({
+    observations: [
+      { price: 100, observedAt: "2026-01-10T00:00:00.000Z" },
+      { price: 95, observedAt: "2026-02-01T00:00:00.000Z" },
+      { price: 90, observedAt: "2026-03-01T00:00:00.000Z" },
+      { price: 80, observedAt: "2026-03-31T00:00:00.000Z" },
+    ],
+    trackingStartedAt: null,
+    listedAt: "2026-01-01T00:00:00.000Z",
+    windowEnd: "2026-04-01T00:00:00.000Z",
+    isCompleteSeries: true,
+    isTruncated: false,
+  });
+
+  assert.equal(minimum.hasReliableCoverage, false);
+  assert.equal(minimum.minimumPrice, null);
+  assert.equal(
+    getAffarioPriceHighlight({
+      currentPrice: 80,
+      minimumPrice365Days: null,
+      hasReliable365DayCoverage: false,
+      minimumPriceSinceAvailable: minimum.minimumPrice,
+      hasReliableSinceAvailableCoverage:
+        minimum.hasReliableCoverage,
+    }),
+    null
+  );
+});
+
+test("dati da disponibilità invalidi o insufficienti non sono affidabili", () => {
+  const baseInput = {
+    observations: [
+      { price: 100, observedAt: "2026-01-10T00:00:00.000Z" },
+      { price: 90, observedAt: "2026-02-01T00:00:00.000Z" },
+      { price: 80, observedAt: "2026-03-01T00:00:00.000Z" },
+    ],
+    trackingStartedAt: "2025-12-31T00:00:00.000Z",
+    listedAt: "2026-01-01T00:00:00.000Z",
+    windowEnd: "2026-04-01T00:00:00.000Z",
+    isCompleteSeries: true,
+    isTruncated: false,
+  } as const;
+
+  assert.equal(
+    analyzePriceHistorySinceAvailableMinimum(baseInput)
+      .hasReliableCoverage,
+    false
+  );
+  assert.equal(
+    analyzePriceHistorySinceAvailableMinimum({
+      ...baseInput,
+      trackingStartedAt: "non-una-data",
+    }).hasReliableCoverage,
+    false
+  );
+  assert.equal(
+    analyzePriceHistorySinceAvailableMinimum({
+      ...baseInput,
+      observations: [
+        ...baseInput.observations,
+        { price: 70, observedAt: "2026-03-15T00:00:00.000Z" },
+      ],
+      isCompleteSeries: false,
+    }).hasReliableCoverage,
+    false
+  );
+});
+
+test("il prezzo non al minimo non riceve highlight e i 12 mesi hanno precedenza", () => {
+  assert.equal(
+    getAffarioPriceHighlight({
+      currentPrice: 80,
+      minimumPrice365Days: null,
+      hasReliable365DayCoverage: false,
+      minimumPriceSinceAvailable: 70,
+      hasReliableSinceAvailableCoverage: true,
+    }),
+    null
+  );
+  assert.equal(
+    getAffarioPriceHighlight({
+      currentPrice: 80,
+      minimumPrice365Days: 80,
+      hasReliable365DayCoverage: true,
+      minimumPriceSinceAvailable: 80,
+      hasReliableSinceAvailableCoverage: true,
+    }),
+    "LOWEST_12_MONTHS"
+  );
+});
+
+test("il nuovo fatto sul prezzo non modifica Score o raccomandazione", () => {
+  const withoutHighlight = createAffarioAdvice({
+    currentPrice: 80,
+    minimumPrice90Days: 80,
+    averagePrice90Days: 100,
+    ...RELIABLE_HISTORY,
+  });
+  const withHighlight = createAffarioAdvice({
+    currentPrice: 80,
+    minimumPrice90Days: 80,
+    averagePrice90Days: 100,
+    ...RELIABLE_HISTORY,
+    minimumPriceSinceAvailable: 80,
+    hasReliableSinceAvailableCoverage: true,
+  });
+
+  assert.equal(withHighlight.priceHighlight, "LOWEST_SINCE_AVAILABLE");
+  assert.equal(withHighlight.score, withoutHighlight.score);
+  assert.equal(withHighlight.recommendation, withoutHighlight.recommendation);
+  assert.equal(withHighlight.label, withoutHighlight.label);
+  assert.equal(withHighlight.message, withoutHighlight.message);
+  assert.equal(withHighlight.tone, withoutHighlight.tone);
 });
 
 test("il minimo annuale richiede lo stato al cutoff e una lettura completa", () => {
