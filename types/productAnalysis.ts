@@ -1,5 +1,19 @@
 import type { AffarioAdvice } from "./affarioAdvice";
 
+export type AffarioSavingsPotential =
+  | {
+      status: "AVAILABLE";
+      amount: number;
+      targetPrice: number;
+      message: string;
+    }
+  | {
+      status: "NOT_APPLICABLE" | "INSUFFICIENT_DATA";
+      amount: null;
+      targetPrice: null;
+      message: null;
+    };
+
 export type AffarioProductAnalysisData = {
   asin: string;
   buyBox: {
@@ -12,6 +26,7 @@ export type AffarioProductAnalysisData = {
     minimumBuyBoxPrice: number | null;
   };
   advice: AffarioAdvice;
+  savingsPotential: AffarioSavingsPotential;
 };
 
 export type ProductAnalysisState =

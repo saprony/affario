@@ -1,4 +1,7 @@
-import type { AffarioProductAnalysisData } from "../types/productAnalysis";
+import type {
+  AffarioProductAnalysisData,
+  AffarioSavingsPotential,
+} from "../types/productAnalysis";
 import type {
   AffarioAdvice,
   AffarioAdviceLabel,
@@ -34,6 +37,12 @@ export type ProductAnalysisPresentation = {
   priceTimestamp: string | null;
   minimum90Days: string;
   average90Days: string;
+  savingsPotential: {
+    amount: string;
+    targetPrice: string;
+    message: string;
+    prominence: "SUBTLE" | "STANDARD" | "PROMINENT";
+  } | null;
 };
 
 export class ProductAnalysisRequestError extends Error {
@@ -49,6 +58,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNullableNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 const AFFARIO_ADVICE_LABELS = new Set<AffarioAdviceLabel>([
@@ -124,6 +137,49 @@ function parseAffarioAdvice(value: unknown): AffarioAdvice | null {
   };
 }
 
+function parseSavingsPotential(
+  value: unknown
+): AffarioSavingsPotential | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.status === "AVAILABLE") {
+    if (
+      !isPositiveFiniteNumber(value.amount) ||
+      !isPositiveFiniteNumber(value.targetPrice) ||
+      typeof value.message !== "string" ||
+      !value.message.trim()
+    ) {
+      return null;
+    }
+
+    return {
+      status: "AVAILABLE",
+      amount: value.amount,
+      targetPrice: value.targetPrice,
+      message: value.message,
+    };
+  }
+
+  if (
+    (value.status === "NOT_APPLICABLE" ||
+      value.status === "INSUFFICIENT_DATA") &&
+    value.amount === null &&
+    value.targetPrice === null &&
+    value.message === null
+  ) {
+    return {
+      status: value.status,
+      amount: null,
+      targetPrice: null,
+      message: null,
+    };
+  }
+
+  return null;
+}
+
 function getAmazonCta(
   asin: string,
   recommendation: AffarioAdviceRecommendation
@@ -173,6 +229,7 @@ function parseProductAnalysisPayload(
   const { data } = payload;
   const lastBuyBoxUpdate = data.lastBuyBoxUpdate;
   const advice = parseAffarioAdvice(data.advice);
+  const savingsPotential = parseSavingsPotential(data.savingsPotential);
 
   if (
     typeof data.asin !== "string" ||
@@ -189,6 +246,7 @@ function parseProductAnalysisPayload(
     !isNullableNumber(data.priceHistory90Days.averageBuyBoxPrice) ||
     !isNullableNumber(data.priceHistory90Days.minimumBuyBoxPrice) ||
     !advice ||
+    !savingsPotential ||
     data.buyBox.currency !== "EUR" ||
     data.priceHistory90Days.currency !== "EUR"
   ) {
@@ -208,6 +266,7 @@ function parseProductAnalysisPayload(
       minimumBuyBoxPrice: data.priceHistory90Days.minimumBuyBoxPrice,
     },
     advice,
+    savingsPotential,
   };
 }
 
@@ -326,6 +385,28 @@ export function getProductAnalysisPresentation(
     data.buyBox.status === "AVAILABLE" &&
     data.buyBox.currentPrice !== null;
 
+  const savingsProminence = {
+    BUY_NOW: "SUBTLE",
+    BUY: "SUBTLE",
+    NEUTRAL: "STANDARD",
+    WAIT: "PROMINENT",
+    NONE: null,
+  } as const;
+  const savingsPotentialProminence =
+    savingsProminence[data.advice.recommendation];
+  const savingsPotential =
+    data.savingsPotential.status === "AVAILABLE" &&
+    savingsPotentialProminence !== null
+      ? {
+          amount: formatEuroPrice(data.savingsPotential.amount)!,
+          targetPrice: formatEuroPrice(
+            data.savingsPotential.targetPrice
+          )!,
+          message: data.savingsPotential.message,
+          prominence: savingsPotentialProminence,
+        }
+      : null;
+
   return {
     advice: data.advice,
     amazonCta: getAmazonCta(data.asin, data.advice.recommendation),
@@ -342,5 +423,6 @@ export function getProductAnalysisPresentation(
     average90Days:
       formatEuroPrice(data.priceHistory90Days.averageBuyBoxPrice) ??
       "Non disponibile",
+    savingsPotential,
   };
 }

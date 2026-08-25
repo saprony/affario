@@ -3,6 +3,10 @@ import "server-only";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import {
+  calculatePotentialSavings,
+  type AffarioPotentialSavingsAnalysis,
+} from "@/lib/calculatePotentialSavings";
+import {
   analyzePriceHistoryQuality,
   analyzePriceHistorySinceAvailableMinimum,
   analyzePriceHistoryWindowMinimum,
@@ -89,6 +93,7 @@ export type AffarioProductLookupResult = {
   buyBox: AffarioLookupBuyBox;
   buyBox90Days: AffarioLookupBuyBox90Days;
   buyBoxHistory90Days: PriceHistoryQuality;
+  potentialSavingsAnalysis: AffarioPotentialSavingsAnalysis;
   buyBox365Days: AffarioLookupBuyBox365Days;
   buyBoxSinceAvailable: AffarioLookupBuyBoxSinceAvailable;
   currency: string;
@@ -533,6 +538,13 @@ function buildLookupResult(
   const tokensConsumed = usage?.tokensConsumed ?? 0;
   const history90DaysStartedAt =
     nowMilliseconds - NINETY_DAYS_IN_MILLISECONDS;
+  const targetWindowEndedAt = snapshot.requested_at;
+  const targetWindowStartedAt = new Date(
+    getTimestampMilliseconds(
+      targetWindowEndedAt,
+      "keepa_snapshots.requested_at"
+    ) - NINETY_DAYS_IN_MILLISECONDS
+  ).toISOString();
   const buyBoxHistoryPoints = [
     ...(buyBoxHistory365DaysBaseline
       ? [buyBoxHistory365DaysBaseline]
@@ -570,6 +582,24 @@ function buildLookupResult(
       isCompleteSeries: historyStartEvidence.isCompleteSeries,
       isTruncated: buyBoxHistory365DaysIsTruncated,
     });
+  const buyBoxHistory90Days = analyzePriceHistoryQuality(
+    buyBoxHistoryPoints
+      .filter(
+        (observation) =>
+          Date.parse(observation.observedAt) >= history90DaysStartedAt
+      )
+      .map((observation) => ({
+        price: observation.price ?? Number.NaN,
+        observedAt: observation.observedAt,
+      }))
+  );
+  const potentialSavingsAnalysis = calculatePotentialSavings({
+    currentPrice: centsToEuros(snapshot.buybox_current_cents),
+    observations: buyBoxHistoryPoints,
+    windowStart: targetWindowStartedAt,
+    windowEnd: targetWindowEndedAt,
+    isTruncated: buyBoxHistory365DaysIsTruncated,
+  });
 
   return {
     asin: product.asin,
@@ -610,17 +640,8 @@ function buildLookupResult(
       minimumInEuros: centsToEuros(snapshot.min90_cents),
       minimumObservedAt: snapshot.min90_observed_at,
     },
-    buyBoxHistory90Days: analyzePriceHistoryQuality(
-      buyBoxHistoryPoints
-        .filter(
-          (observation) =>
-            Date.parse(observation.observedAt) >= history90DaysStartedAt
-        )
-        .map((observation) => ({
-          price: observation.price ?? Number.NaN,
-          observedAt: observation.observedAt,
-        }))
-    ),
+    buyBoxHistory90Days,
+    potentialSavingsAnalysis,
     buyBox365Days: {
       minimumInEuros: buyBox365Days.minimumPrice,
       hasReliableCoverage: buyBox365Days.hasReliableCoverage,

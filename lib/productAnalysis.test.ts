@@ -10,12 +10,16 @@ import {
   type ProductAnalysisRequester,
 } from "./productAnalysis";
 import type { AffarioAdvice } from "../types/affarioAdvice";
-import type { AffarioProductAnalysisData } from "../types/productAnalysis";
+import type {
+  AffarioProductAnalysisData,
+  AffarioSavingsPotential,
+} from "../types/productAnalysis";
 
 function createPayload(overrides?: {
   status?: "AVAILABLE" | "UNAVAILABLE";
   currentPrice?: number | null;
   priceHighlight?: AffarioAdvice["priceHighlight"];
+  savingsPotential?: AffarioSavingsPotential;
 }) {
   return {
     data: {
@@ -45,6 +49,15 @@ function createPayload(overrides?: {
         priceHighlight:
           overrides?.priceHighlight ?? "LOWEST_12_MONTHS",
       },
+      savingsPotential:
+        overrides?.savingsPotential ??
+        ({
+          status: "AVAILABLE",
+          amount: 150,
+          targetPrice: 1_150,
+          message:
+            "Stima basata sui prezzi favorevoli realmente osservati negli ultimi 90 giorni.",
+        } as const),
       source: "DATABASE_CACHE",
       cacheHit: true,
     },
@@ -132,6 +145,7 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
     "buyBox",
     "lastBuyBoxUpdate",
     "priceHistory90Days",
+    "savingsPotential",
   ]);
   assert.equal("lastKeepaCheckAt" in result, false);
   assert.equal("source" in result, false);
@@ -148,6 +162,13 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
     presentation.advice.priceHighlight,
     "LOWEST_12_MONTHS"
   );
+  assert.deepEqual(presentation.savingsPotential, {
+    amount: "150,00 €",
+    targetPrice: "1.150,00 €",
+    message:
+      "Stima basata sui prezzi favorevoli realmente osservati negli ultimi 90 giorni.",
+    prominence: "SUBTLE",
+  });
   assert.equal(
     presentation.amazonCta?.label.includes(result.asin),
     false
@@ -163,10 +184,22 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
       averageBuyBoxPrice: 1242.53,
       minimumBuyBoxPrice: 1169,
     },
+    savingsPotential: {
+      status: "AVAILABLE" as const,
+      amount: 150,
+      targetPrice: 1_150,
+      message:
+        "Stima basata sui prezzi favorevoli realmente osservati negli ultimi 90 giorni.",
+    },
   };
   const cases: Array<{
     advice: AffarioAdvice;
     expectedPriority: "PRIMARY" | "SUPPORTING" | "NEUTRAL" | null;
+    expectedSavingsProminence:
+      | "SUBTLE"
+      | "STANDARD"
+      | "PROMINENT"
+      | null;
   }> = [
     {
       advice: {
@@ -179,6 +212,7 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         priceHighlight: null,
       },
       expectedPriority: "PRIMARY",
+      expectedSavingsProminence: "SUBTLE",
     },
     {
       advice: {
@@ -191,6 +225,7 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         priceHighlight: null,
       },
       expectedPriority: "SUPPORTING",
+      expectedSavingsProminence: "SUBTLE",
     },
     {
       advice: {
@@ -203,6 +238,7 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         priceHighlight: null,
       },
       expectedPriority: "NEUTRAL",
+      expectedSavingsProminence: "STANDARD",
     },
     {
       advice: {
@@ -215,6 +251,7 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         priceHighlight: null,
       },
       expectedPriority: null,
+      expectedSavingsProminence: "PROMINENT",
     },
     {
       advice: {
@@ -227,10 +264,15 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         priceHighlight: null,
       },
       expectedPriority: null,
+      expectedSavingsProminence: null,
     },
   ];
 
-  for (const { advice, expectedPriority } of cases) {
+  for (const {
+    advice,
+    expectedPriority,
+    expectedSavingsProminence,
+  } of cases) {
     const presentation = getProductAnalysisPresentation({
       ...baseData,
       advice,
@@ -238,10 +280,38 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
 
     assert.equal(presentation.amazonCta?.priority ?? null, expectedPriority);
     assert.equal(
+      presentation.savingsPotential?.prominence ?? null,
+      expectedSavingsProminence
+    );
+    assert.deepEqual(presentation.advice, advice);
+    assert.equal(
       presentation.amazonCta?.label.includes(baseData.asin) ?? false,
       false
     );
   }
+});
+
+test("NOT_APPLICABLE non espone importo o target consumer", () => {
+  const payload = createPayload({
+    savingsPotential: {
+      status: "NOT_APPLICABLE",
+      amount: null,
+      targetPrice: null,
+      message: null,
+    },
+  }).data;
+  const presentation = getProductAnalysisPresentation({
+    asin: payload.asin,
+    buyBox: payload.buyBox,
+    lastBuyBoxUpdate: payload.lastBuyBoxUpdate,
+    priceHistory90Days: payload.priceHistory90Days,
+    advice: payload.advice as AffarioAdvice,
+    savingsPotential: payload.savingsPotential,
+  } satisfies AffarioProductAnalysisData);
+
+  assert.equal(presentation.savingsPotential, null);
+  assert.equal(presentation.advice.recommendation, "BUY_NOW");
+  assert.equal(presentation.amazonCta?.priority, "PRIMARY");
 });
 
 test("dopo un errore rilascia il loading e consente un retry volontario", async () => {
@@ -332,6 +402,12 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
       recommendation: "NONE" as const,
       priceHighlight: null,
     },
+    savingsPotential: {
+      status: "INSUFFICIENT_DATA" as const,
+      amount: null,
+      targetPrice: null,
+      message: null,
+    },
   };
   const presentation = getProductAnalysisPresentation(data);
 
@@ -341,6 +417,7 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
   assert.equal(presentation.advice.status, "INSUFFICIENT_DATA");
   assert.equal(presentation.advice.score, null);
   assert.equal(presentation.amazonCta, null);
+  assert.equal(presentation.savingsPotential, null);
   assert.equal(presentation.minimum90Days, "1.099,00 €");
   assert.equal(presentation.average90Days, "1.210,50 €");
 });

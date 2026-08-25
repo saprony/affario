@@ -44,6 +44,12 @@ const PRICE_HIGHLIGHT_TEXT = {
   LOWEST_SINCE_AVAILABLE: AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
 } as const;
 
+const SAVINGS_POTENTIAL_STYLES = {
+  SUBTLE: "border-slate-200 bg-slate-50 text-slate-800",
+  STANDARD: "border-green-200 bg-green-50 text-green-900",
+  PROMINENT: "border-2 border-green-500 bg-green-50 text-green-950",
+} as const;
+
 type AmazonCta = NonNullable<ProductAnalysisPresentation["amazonCta"]>;
 
 function AmazonCtaLink({ cta }: { cta: AmazonCta }) {
@@ -210,6 +216,26 @@ export default function ProductPriceAnalysis({
           </dd>
         </div>
       </dl>
+
+      {presentation.savingsPotential && (
+        <div
+          className={`mt-5 rounded-2xl border p-5 ${SAVINGS_POTENTIAL_STYLES[presentation.savingsPotential.prominence]}`}
+        >
+          <p className="text-sm font-extrabold uppercase tracking-wide">
+            Risparmio Potenziale
+          </p>
+          <p className="mt-2 text-xl font-black sm:text-2xl">
+            Potresti risparmiare circa {presentation.savingsPotential.amount}
+          </p>
+          <p className="mt-2 font-bold">
+            Prezzo obiettivo AFFARIO: circa{" "}
+            {presentation.savingsPotential.targetPrice}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed">
+            {presentation.savingsPotential.message}
+          </p>
+        </div>
+      )}
 
       {neutralAmazonCta && <AmazonCtaLink cta={neutralAmazonCta} />}
     </section>

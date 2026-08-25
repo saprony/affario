@@ -25,8 +25,8 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 041**, validata tecnicamente.
-- La funzione successiva alla 041 non è ancora avviata.
+- Ultima funzione completata: **FUNZIONE 042**, validata tecnicamente.
+- La funzione successiva alla 042 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -116,8 +116,16 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Le etichette consumer definitive sono **🏆 PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI** per `LOWEST_12_MONTHS` e **🏆 PREZZO PIÙ BASSO DI SEMPRE** per `LOWEST_SINCE_AVAILABLE`; la UI non usa la dicitura impropria **Minimo storico**.
 - Gli highlight restano fatti sul prezzo e non modificano Affario Score, fascia, raccomandazione o CTA Amazon.
 - Verifica reale: iPhone con circa 346,42 giorni, inizio certificabile e `LOWEST_SINCE_AVAILABLE`; Dreame con circa 166,52 giorni, inizio non certificabile e highlight `null`; zero chiamate Keepa aggiuntive.
+- La **FUNZIONE 042 è completata**: la vecchia euristica `min90 + 10/5/3%` è definitivamente rimossa e l'unica formula canonica è **Prezzo Obiettivo AFFARIO = 25° percentile Buy Box degli ultimi 90 giorni ponderato per durata**.
+- Il calcolo usa la durata temporale dei prezzi, non il numero di record, e ricostruisce lo stato Buy Box al cutoff dei 90 giorni; i periodi `UNAVAILABLE` restano nella timeline ma sono esclusi dalla distribuzione dei prezzi.
+- La qualità minima richiede stato al cutoff disponibile, serie non troncata, almeno 4 osservazioni valide, almeno 7 giorni di copertura e almeno 7 giorni complessivi con Buy Box valida.
+- Il target è arrotondato ai 5 € soltanto dopo il calcolo statistico; il Risparmio Potenziale è `current − target` solo se positivo, mentre `current <= target` produce `NOT_APPLICABLE` senza mostrare `0 €` o un target consumer.
+- Prezzo Obiettivo e Risparmio Potenziale non sono previsioni temporali né promesse di raggiungimento e restano indipendenti da Affario Score, recommendation, price highlight e CTA Amazon.
+- Verifica reale: iPhone `B0FQGPJCJK` con current 1.159 €, weighted Q25 1.245 €, `NOT_APPLICABLE` e `BUY_NOW`; Dreame Matrix10 Ultra `B0GKP9H2W1` con current 799 €, weighted Q25 799 €, target 800 €, `NOT_APPLICABLE` e `BUY_NOW`.
+- Il catalogo reale verificato contiene 2 prodotti e nessun caso `AVAILABLE`; il comportamento positivo è validato con test sintetici senza creare dati artificiali né effettuare chiamate Keepa aggiuntive.
+- Backtesting storico, confronto Q20/Q25/Q30, varianti per categoria, probabilità o tempi di raggiungimento e ponderazione per recenza restano evoluzioni future esplicitamente fuori scope dalla Funzione 042.
 - La validazione manuale finale della UI è completata.
-- Risparmio Potenziale e alert non sono ancora collegati al Consiglio AFFARIO reale.
+- Gli alert non sono ancora collegati al Consiglio AFFARIO reale.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -212,7 +220,7 @@ Non esistono ancora come flusso operativo completo:
 
 ### 7.5 Decisioni prodotto numerate
 
-- **Decisione/DD-001 — Risparmio Potenziale:** parte dal minimo degli ultimi 90 giorni con margine prudenziale già definito nella Product Bible; arrotondamento ai 5 €; se il risparmio è minore o uguale a zero mostrare il messaggio previsto, non `0 €`. Il margine non è mostrato all'utente.
+- **Decisione/DD-001 — Risparmio Potenziale:** nella pipeline reale V1 il Prezzo Obiettivo AFFARIO è il 25° percentile Buy Box degli ultimi 90 giorni ponderato per durata; la precedente euristica minimo + margine 10/5/3% è superata. Il Risparmio Potenziale è `current − target` solo se positivo e gli importi consumer sono arrotondati ai 5 €.
 - **Product Bible DD-002 — fasce Affario Score:** 80–100 ottimo momento; 65–79 buon prezzo; 50–64 prezzo nella media; 0–49 conviene aspettare.
 - Il verdetto deriva dallo Score e non viene scritto manualmente.
 
@@ -285,8 +293,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 039 | Completata e validata — variante esatta collegata su azione esplicita a Buy Box e storico 90 giorni reali |
 | 040 | Completata e validata — primo Consiglio AFFARIO reale, raccomandazione operativa e CTA Amazon per la variante esatta |
 | 041 | Completata — highlight coverage-aware per minimo 12 mesi e minimo certificabile da quando disponibile |
+| 042 | Completata — Prezzo Obiettivo AFFARIO come Q25 Buy Box 90 giorni ponderato per durata e Risparmio Potenziale positivo |
 
-Totale associazioni registrate: **33**.
+Totale associazioni registrate: **34**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -426,7 +435,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **041**, validata tecnicamente.
+- Ultima funzione completata: **042**, validata tecnicamente.
 - Funzione successiva: **non avviata**.
 
-Risparmio Potenziale e alert non sono ancora integrati; `PublicHome`, deploy e funzioni successive restano invariati.
+Alert, `PublicHome`, deploy e funzioni successive restano invariati.

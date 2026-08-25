@@ -3,7 +3,6 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { Product } from "@/types/product";
-import { calculatePotentialSavings } from "@/lib/calculatePotentialSavings";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,44 +24,20 @@ function getScoreColor(score: number): string {
   return "#dc2626";
 }
 
-function getAdvice(score: number, savings: number): string {
+function getAdvice(score: number): string {
   if (score >= 80) {
-    return "Ti consigliamo di acquistare ora. Il prezzo è molto vicino ai minimi registrati e AFFARIO non prevede ribassi significativi nel breve periodo.";
+    return "Ti consigliamo di acquistare ora. Il prezzo è molto vicino ai minimi registrati.";
   }
 
   if (score >= 65) {
-    return "Il prezzo è buono. Se non hai urgenza, puoi attendere qualche giorno per verificare eventuali piccoli ribassi.";
+    return "Il prezzo è buono. Se non hai urgenza, puoi continuare a monitorarlo.";
   }
 
   if (score >= 50) {
     return "Il prezzo è nella media. Se puoi aspettare, AFFARIO consiglia di monitorare il prodotto prima di acquistare.";
   }
 
-  return `Ti consigliamo di aspettare. Secondo AFFARIO potresti risparmiare fino a circa € ${savings} nei prossimi ribassi.`;
-}
-
-function getSavingsStyle(score: number) {
-  if (score >= 80) {
-    return {
-      box: "mt-5 rounded-2xl border border-yellow-300 bg-yellow-50 p-4",
-      label: "text-sm font-bold text-yellow-700",
-      value: "mt-2 text-2xl font-black text-yellow-700",
-    };
-  }
-
-  if (score >= 65) {
-    return {
-      box: "mt-5 rounded-2xl border border-green-300 bg-green-50 p-5",
-      label: "text-sm font-bold text-green-700",
-      value: "mt-2 text-3xl font-black text-green-700",
-    };
-  }
-
-  return {
-    box: "mt-5 rounded-2xl border-2 border-green-600 bg-green-100 p-6",
-    label: "text-base font-bold text-green-800",
-    value: "mt-2 text-5xl font-black text-green-800",
-  };
+  return "Ti consigliamo di aspettare. Il prezzo attuale è alto rispetto allo storico recente.";
 }
 
 export default function AnalysisCard({ product }: AnalysisCardProps) {
@@ -75,15 +50,9 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
   const [isAlertAlreadyActive, setIsAlertAlreadyActive] = useState(false);
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
 
-  const potentialSavings = calculatePotentialSavings(
-    product.currentPrice,
-    product.lowestPrice90Days
-  );
-
   const score = product.affarioScore;
-  const style = getSavingsStyle(score);
   const verdict = getVerdict(score);
-  const advice = getAdvice(score, potentialSavings.savings);
+  const advice = getAdvice(score);
   const amazonUrl = product.amazonUrl.trim();
   const isAmazonLinkAvailable = amazonUrl !== "" && amazonUrl !== "#";
 
@@ -170,20 +139,6 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
         Prezzo attuale: € {product.currentPrice.toLocaleString("it-IT")}
       </p>
 
-      <div className={style.box}>
-        <p className={style.label}>💰 Risparmio Potenziale</p>
-
-        {potentialSavings.savings <= 0 ? (
-          <p className="mt-2 text-lg font-bold text-green-800">
-            AFFARIO non prevede ribassi di prezzo nei prossimi 30 giorni.
-          </p>
-        ) : (
-          <p className={style.value}>
-            Fino a circa € {potentialSavings.savings}
-          </p>
-        )}
-      </div>
-
       <div
         className="mt-5 inline-block rounded-xl px-5 py-3 font-extrabold text-white"
         style={{ background: getScoreColor(score) }}
@@ -204,16 +159,10 @@ export default function AnalysisCard({ product }: AnalysisCardProps) {
         l&apos;Affario Score.
       </p>
 
-      <ul className="mt-5 list-disc pl-5 leading-8">
-        <li>
-          Prezzo minimo ultimi 90 giorni: €{" "}
-          {product.lowestPrice90Days.toLocaleString("it-IT")}
-        </li>
-        <li>
-          Prezzo obiettivo Affario: €{" "}
-          {potentialSavings.targetPrice.toLocaleString("it-IT")}
-        </li>
-      </ul>
+      <p className="mt-5 leading-8">
+        Prezzo minimo ultimi 90 giorni: €{" "}
+        {product.lowestPrice90Days.toLocaleString("it-IT")}
+      </p>
 
       <div className="mt-8">
         {isAmazonLinkAvailable ? (

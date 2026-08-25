@@ -10,6 +10,7 @@ import {
   normalizeKeepaAsin,
 } from "@/services/keepaClient";
 import type { AffarioAdvice } from "@/types/affarioAdvice";
+import type { AffarioSavingsPotential } from "@/types/productAnalysis";
 
 type ProductRouteContext = {
   params: Promise<{ asin: string }>;
@@ -58,6 +59,7 @@ export type AffarioProductApiResponse = {
       currency: string;
     };
     advice: AffarioAdvice;
+    savingsPotential: AffarioSavingsPotential;
   };
 };
 
@@ -174,6 +176,8 @@ export async function GET(
           currency: result.currency,
         },
         advice,
+        savingsPotential:
+          result.potentialSavingsAnalysis.savingsPotential,
       },
     });
   } catch (error) {
