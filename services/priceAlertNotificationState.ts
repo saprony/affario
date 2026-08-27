@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PRICE_ALERT_ACTIVE_STATUS } from "@/lib/affarioPriceAlert";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
 type NotificationTimestampColumn =
@@ -94,6 +95,7 @@ async function readNotificationState(
     .from("price_alerts")
     .select(column)
     .eq("id", alertId)
+    .eq("status", PRICE_ALERT_ACTIVE_STATUS)
     .maybeSingle<NotificationTimestampRow>();
 
   if (error) {
@@ -140,6 +142,7 @@ async function markNotificationSent(
     .from("price_alerts")
     .update({ [column]: normalizedNotifiedAt })
     .eq("id", normalizedAlertId)
+    .eq("status", PRICE_ALERT_ACTIVE_STATUS)
     .is(column, null)
     .select(column)
     .maybeSingle<NotificationTimestampRow>();

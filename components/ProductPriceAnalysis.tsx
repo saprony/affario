@@ -2,10 +2,12 @@ import {
   getProductAnalysisPresentation,
   type ProductAnalysisPresentation,
 } from "@/lib/productAnalysis";
+import AffarioPriceAlert from "@/components/AffarioPriceAlert";
 import {
   AFFARIO_LOWEST_12_MONTHS_LABEL,
   AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
 } from "@/lib/affarioAdvice";
+import { getAffarioPriceAlertOpportunity } from "@/lib/affarioPriceAlert";
 import type {
   AffarioAdviceRecommendation,
   AffarioAdviceTone,
@@ -124,6 +126,11 @@ export default function ProductPriceAnalysis({
     presentation.amazonCta?.priority === "NEUTRAL"
       ? presentation.amazonCta
       : null;
+  const alertOpportunity = getAffarioPriceAlertOpportunity({
+    recommendation: state.data.advice.recommendation,
+    currentPrice: state.data.buyBox.currentPrice,
+    savingsPotential: state.data.savingsPotential,
+  });
 
   return (
     <section
@@ -236,6 +243,15 @@ export default function ProductPriceAnalysis({
           </p>
         </div>
       )}
+
+      {alertOpportunity &&
+        state.data.savingsPotential.status === "AVAILABLE" && (
+          <AffarioPriceAlert
+            exactAsin={state.data.asin}
+            targetPrice={state.data.savingsPotential.targetPrice}
+            opportunity={alertOpportunity}
+          />
+        )}
 
       {neutralAmazonCta && <AmazonCtaLink cta={neutralAmazonCta} />}
     </section>

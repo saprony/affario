@@ -6,7 +6,22 @@ export const metadata: Metadata = {
     "Informativa sul trattamento dei dati personali del servizio AFFARIO.",
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function getPrivacyContactEmail(): string {
+  const email = process.env.PRIVACY_CONTACT_EMAIL?.trim();
+
+  if (!email || !EMAIL_PATTERN.test(email)) {
+    throw new Error(
+      "Configurazione PRIVACY_CONTACT_EMAIL mancante o non valida."
+    );
+  }
+
+  return email;
+}
+
 export default function PrivacyPage() {
+  const privacyContactEmail = getPrivacyContactEmail();
   const sectionClassName = "space-y-3";
   const headingClassName = "text-lg font-bold text-gray-900";
 
@@ -31,10 +46,10 @@ export default function PrivacyPage() {
               <p>
                 Email:{" "}
                 <a
-                  href="mailto:saporitof@gmail.com"
+                  href={`mailto:${privacyContactEmail}`}
                   className="font-semibold text-green-700 underline underline-offset-2 hover:text-green-800"
                 >
-                  saporitof@gmail.com
+                  {privacyContactEmail}
                 </a>
               </p>
             </div>
@@ -148,10 +163,10 @@ export default function PrivacyPage() {
               Per esercitare i propri diritti, l&apos;utente può contattare il
               Titolare all&apos;indirizzo{" "}
               <a
-                href="mailto:saporitof@gmail.com"
+                href={`mailto:${privacyContactEmail}`}
                 className="font-semibold text-green-700 underline underline-offset-2 hover:text-green-800"
               >
-                saporitof@gmail.com
+                {privacyContactEmail}
               </a>
               .
             </p>

@@ -25,8 +25,9 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 042**, validata tecnicamente.
-- La funzione successiva alla 042 non è ancora avviata.
+- Ultima funzione completata: **FUNZIONE 043**, validata tecnicamente e con
+  migration remota applicata.
+- La funzione successiva alla 043 non è ancora avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -125,7 +126,14 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Il catalogo reale verificato contiene 2 prodotti e nessun caso `AVAILABLE`; il comportamento positivo è validato con test sintetici senza creare dati artificiali né effettuare chiamate Keepa aggiuntive.
 - Backtesting storico, confronto Q20/Q25/Q30, varianti per categoria, probabilità o tempi di raggiungimento e ponderazione per recenza restano evoluzioni future esplicitamente fuori scope dalla Funzione 042.
 - La validazione manuale finale della UI è completata.
-- Gli alert non sono ancora collegati al Consiglio AFFARIO reale.
+- La **FUNZIONE 043 è COMPLETATA**: l'alert reale è collegato all'exact ASIN e
+  usa come target il Prezzo Obiettivo AFFARIO calcolato dalla pipeline
+  server-side; il client invia soltanto ASIN ed email.
+- Il flusso alert resta email-only: lo stato iniziale è
+  `pending_confirmation`, Brevo invia l'email con il link personale, il GET
+  `/alert/[token]` è read-only e soltanto il POST esplicito di conferma porta
+  l'alert ad `active`.
+- Scheduler e motore automatico restano fuori scope.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -214,6 +222,24 @@ Non esistono ancora come flusso operativo completo:
 
 - L'alert è legato alla variante/ASIN esatto, non al seller.
 - Il seller può cambiare senza cambiare l'identità dell'alert.
+- La deduplicazione V1 usa l'indice UNIQUE corrente
+  `(product_id, email, target_price)`: se il Prezzo Obiettivo AFFARIO cambia, lo
+  stesso utente può quindi avere un alert distinto sullo stesso ASIN con target
+  differente. Questo comportamento resta intenzionale nella V1.
+- Un duplicato `pending_confirmation` può richiedere nuovamente la conferma
+  dopo un cooldown di 15 minuti: il record resta unico, il token viene ruotato,
+  il vecchio link diventa invalido e `confirmation_requested_at` registra
+  l'ultima richiesta/rotazione del link. `created_at` resta immutabile e indica
+  esclusivamente la creazione originaria dell'alert. Gli alert `active` non
+  vengono modificati dal resend.
+- Il token raw non viene mai persistito: nel database resta soltanto il relativo
+  hash SHA-256.
+- Gli alert `pending_confirmation` sono esclusi dalle notifiche intermedie e
+  target. La notifica target è one-shot; il raggiungimento del target chiude il
+  ciclo operativo tramite lo stato di notifica, ma non cancella il record
+  storico.
+- La conferma riguarda esclusivamente l'alert richiesto: non costituisce double
+  opt-in per marketing o newsletter.
 - La CTA Amazon compare solo dopo una scelta volontaria dell'utente.
 - Per i link futuri preferire URL Amazon diretti e ufficiali.
 - Non fare scraping Amazon e non inventare disponibilità o link ufficiali non ancora integrati.
@@ -294,8 +320,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 040 | Completata e validata — primo Consiglio AFFARIO reale, raccomandazione operativa e CTA Amazon per la variante esatta |
 | 041 | Completata — highlight coverage-aware per minimo 12 mesi e minimo certificabile da quando disponibile |
 | 042 | Completata — Prezzo Obiettivo AFFARIO come Q25 Buy Box 90 giorni ponderato per durata e Risparmio Potenziale positivo |
+| 043 | **COMPLETATA** — alert reale email-only sull'exact ASIN con target server-side, stato iniziale `pending_confirmation` e conferma POST esplicita prima dello stato `active`; scheduler/motore automatico fuori scope |
 
-Totale associazioni registrate: **34**.
+Totale associazioni registrate: **35**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -381,6 +408,8 @@ Conseguenze:
 - `.env.local` non deve mai essere tracciato.
 - Segreti e credenziali devono restare server-side.
 - Non usare `NEXT_PUBLIC_*` per chiavi o service role.
+- Il contatto mostrato nella pagina Privacy è configurato server-side tramite
+  `PRIVACY_CONTACT_EMAIL`; non deve essere hardcoded nei file tracciati.
 - `service_role` non deve mai raggiungere il browser.
 - Non creare screenshot contenenti credenziali.
 - RLS dello storage Keepa è attiva.
@@ -400,6 +429,16 @@ La V1 pre-lancio deve restare stretta. Sono necessari:
 6. completare hardening, verifica segreti, gestione errori e test mobile/desktop;
 7. verificare CTA e URL Amazon ufficiali nel perimetro autorizzato;
 8. eseguire deploy e smoke test soltanto con autorizzazione esplicita.
+9. definire e automatizzare una policy di scadenza/pulizia dei
+   `pending_confirmation` mai confermati, indicativamente dopo 48–72 ore; il
+   calcolo dovrà partire dalla creazione originaria registrata in `created_at`,
+   non dai resend registrati in `confirmation_requested_at`; il
+   raggiungimento del target non deve invece cancellare il record storico,
+   necessario alla futura validazione dell'algoritmo AFFARIO.
+10. sostituire `PRIVACY_CONTACT_EMAIL` con una casella AFFARIO reale e
+    monitorata; la creazione e configurazione di `info@affario.it` e/o
+    `admin@affario.it` resta un'attività pre-go-live e le caselle non vengono
+    create in questa fase.
 
 ## 14. Backlog post-lancio
 
@@ -435,7 +474,8 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **042**, validata tecnicamente.
+- Ultima funzione completata: **043**, validata tecnicamente e con migration
+  remota applicata.
 - Funzione successiva: **non avviata**.
 
-Alert, `PublicHome`, deploy e funzioni successive restano invariati.
+`PublicHome`, deploy e funzioni successive restano invariati.
