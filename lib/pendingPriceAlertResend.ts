@@ -1,6 +1,8 @@
 import {
   PRICE_ALERT_ACTIVE_STATUS,
+  PRICE_ALERT_NOTIFYING_TARGET_STATUS,
   PRICE_ALERT_PENDING_STATUS,
+  PRICE_ALERT_TARGET_NOTIFIED_STATUS,
 } from "./affarioPriceAlert";
 
 export const PRICE_ALERT_RESEND_COOLDOWN_MS = 15 * 60 * 1_000;
@@ -25,6 +27,7 @@ export type PendingPriceAlertResendStore = {
 
 export type PendingPriceAlertResendResult =
   | { status: "active" }
+  | { status: "target-notified" }
   | { status: "cooldown"; retryAfterSeconds: number }
   | { status: "resend"; confirmationToken: string }
   | { status: "invalid" };
@@ -48,8 +51,15 @@ export async function preparePendingPriceAlertResend({
   store: PendingPriceAlertResendStore;
   now?: Date;
 }): Promise<PendingPriceAlertResendResult> {
-  if (existingAlert.status === PRICE_ALERT_ACTIVE_STATUS) {
+  if (
+    existingAlert.status === PRICE_ALERT_ACTIVE_STATUS ||
+    existingAlert.status === PRICE_ALERT_NOTIFYING_TARGET_STATUS
+  ) {
     return { status: "active" };
+  }
+
+  if (existingAlert.status === PRICE_ALERT_TARGET_NOTIFIED_STATUS) {
+    return { status: "target-notified" };
   }
 
   const confirmationRequestedAtMs =

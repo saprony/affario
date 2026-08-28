@@ -6,10 +6,15 @@ const EXACT_ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
 export const PRICE_ALERT_PENDING_STATUS = "pending_confirmation" as const;
 export const PRICE_ALERT_ACTIVE_STATUS = "active" as const;
+export const PRICE_ALERT_NOTIFYING_TARGET_STATUS =
+  "notifying_target" as const;
+export const PRICE_ALERT_TARGET_NOTIFIED_STATUS =
+  "target_notified" as const;
 
 export type PriceAlertPersistenceStatus =
   | typeof PRICE_ALERT_PENDING_STATUS
-  | typeof PRICE_ALERT_ACTIVE_STATUS;
+  | typeof PRICE_ALERT_ACTIVE_STATUS
+  | typeof PRICE_ALERT_TARGET_NOTIFIED_STATUS;
 
 export type AffarioPriceAlertOpportunity = {
   priority: "PRIMARY" | "SECONDARY";
@@ -72,6 +77,10 @@ export class PriceAlertRequestError extends Error {
   }
 }
 
+export function isExactPriceAlertAsin(value: unknown): value is string {
+  return typeof value === "string" && EXACT_ASIN_PATTERN.test(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -120,7 +129,7 @@ export function resolveTrustedAffarioPriceAlert({
 
   if (
     !opportunity ||
-    !EXACT_ASIN_PATTERN.test(exactAsin) ||
+    !isExactPriceAlertAsin(exactAsin) ||
     !productTitle.trim() ||
     currentPrice === null ||
     savingsPotential.status !== "AVAILABLE"
@@ -151,7 +160,8 @@ export function isPriceAlertPersistenceStatus(
 ): value is PriceAlertPersistenceStatus {
   return (
     value === PRICE_ALERT_PENDING_STATUS ||
-    value === PRICE_ALERT_ACTIVE_STATUS
+    value === PRICE_ALERT_ACTIVE_STATUS ||
+    value === PRICE_ALERT_TARGET_NOTIFIED_STATUS
   );
 }
 
@@ -200,7 +210,7 @@ async function requestAffarioPriceAlert(
 ): Promise<PriceAlertRequestResult> {
   const normalizedEmail = normalizePriceAlertEmail(email);
 
-  if (!EXACT_ASIN_PATTERN.test(exactAsin) || normalizedEmail === null) {
+  if (!isExactPriceAlertAsin(exactAsin) || normalizedEmail === null) {
     throw new PriceAlertRequestError(
       "Inserisci un indirizzo email valido."
     );

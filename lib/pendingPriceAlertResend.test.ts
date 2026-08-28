@@ -198,6 +198,34 @@ test("un duplicato active non ruota token e non abilita resend", async () => {
   assert.equal(rotations, 0);
 });
 
+for (const [databaseStatus, expectedStatus] of [
+  ["notifying_target", "active"],
+  ["target_notified", "target-notified"],
+] as const) {
+  test(`un duplicato ${databaseStatus} non ruota token`, async () => {
+    let rotations = 0;
+
+    const result = await preparePendingPriceAlertResend({
+      existingAlert: {
+        status: databaseStatus,
+        confirmationRequestedAt: "2026-08-27T11:00:00.000Z",
+        manageTokenHash: "a".repeat(64),
+      },
+      newConfirmationToken: generateAlertManagementToken(),
+      newTokenHash: "b".repeat(64),
+      store: {
+        async rotatePendingToken() {
+          rotations += 1;
+          return true;
+        },
+      },
+    });
+
+    assert.equal(result.status, expectedStatus);
+    assert.equal(rotations, 0);
+  });
+}
+
 test("un errore email non causa dead-end ma il cooldown impedisce resend incontrollati", async () => {
   const firstToken = generateAlertManagementToken();
   const secondToken = generateAlertManagementToken();

@@ -4,6 +4,7 @@ import {
   buildPendingPriceAlertInsert,
   normalizePriceAlertEmail,
   PRICE_ALERT_PENDING_STATUS,
+  PRICE_ALERT_TARGET_NOTIFIED_STATUS,
   resolveTrustedAffarioPriceAlert,
   type PriceAlertPersistenceStatus,
 } from "@/lib/affarioPriceAlert";
@@ -234,6 +235,12 @@ export async function POST(request: Request) {
 
       if (duplicateResult.status === "active") {
         return alertAlreadyExistsResponse("active");
+      }
+
+      if (duplicateResult.status === "target-notified") {
+        return alertAlreadyExistsResponse(
+          PRICE_ALERT_TARGET_NOTIFIED_STATUS
+        );
       }
 
       if (duplicateResult.status === "cooldown") {

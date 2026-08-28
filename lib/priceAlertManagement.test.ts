@@ -68,6 +68,19 @@ test("la lettura GET del token pending è read-only", async () => {
   assert.deepEqual(state.calls, { reads: 1, activations: 0 });
 });
 
+test("la lettura GET gestisce in sola lettura un alert target_notified", async () => {
+  const state = createInMemoryStore("target_notified");
+
+  const alert = await readPriceAlertByToken(
+    validToken,
+    tokenCodec,
+    state.store
+  );
+
+  assert.equal(alert?.status, "target_notified");
+  assert.deepEqual(state.calls, { reads: 1, activations: 0 });
+});
+
 test("la conferma POST valida porta pending ad active ed è idempotente", async () => {
   const state = createInMemoryStore("pending_confirmation");
 

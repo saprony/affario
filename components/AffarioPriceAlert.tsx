@@ -6,6 +6,7 @@ import { FormEvent, useRef, useState } from "react";
 import {
   normalizePriceAlertEmail,
   PRICE_ALERT_ACTIVE_STATUS,
+  PRICE_ALERT_TARGET_NOTIFIED_STATUS,
   PriceAlertRequestError,
   requestAffarioPriceAlertOnce,
   type AffarioPriceAlertOpportunity,
@@ -125,6 +126,16 @@ export default function AffarioPriceAlert({
               <p className="font-extrabold">Questo alert è già attivo.</p>
               <p className="mt-1 text-sm leading-relaxed">
                 Non abbiamo creato un secondo alert identico.
+              </p>
+            </>
+          ) : status === "duplicate" &&
+            alertStatus === PRICE_ALERT_TARGET_NOTIFIED_STATUS ? (
+            <>
+              <p className="font-extrabold">
+                Questo alert ha già raggiunto il target.
+              </p>
+              <p className="mt-1 text-sm leading-relaxed">
+                Il record concluso resta disponibile nella pagina di gestione.
               </p>
             </>
           ) : status === "duplicate" && confirmationEmailSent ? (

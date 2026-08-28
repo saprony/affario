@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 25 agosto 2026.
+Ultimo aggiornamento: 28 agosto 2026.
 
 ## 1. Scopo e autorità
 
@@ -25,9 +25,9 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 043**, validata tecnicamente e con
+- Ultima funzione completata: **FUNZIONE 044**, validata tecnicamente e con
   migration remota applicata.
-- La funzione successiva alla 043 non è ancora avviata.
+- La funzione successiva non è avviata.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -133,7 +133,27 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   `pending_confirmation`, Brevo invia l'email con il link personale, il GET
   `/alert/[token]` è read-only e soltanto il POST esplicito di conferma porta
   l'alert ad `active`.
-- Scheduler e motore automatico restano fuori scope.
+- La **FUNZIONE 044 è COMPLETATA**: il monitoraggio ordinario considera
+  esclusivamente alert `active`, aggregati obbligatoriamente per exact ASIN;
+  una verifica prodotto serve tutti gli alert dello stesso ASIN.
+- Le frequenze V1 dipendono dalla distanza dal target: oltre il 15% → 12h,
+  oltre l'8% e fino al 15% → 6h, oltre il 3% e fino all'8% → 3h, fino al 3%
+  incluso → 1h. L'intervallo del gruppo è la frequenza più breve richiesta da
+  uno degli alert e l'ultimo controllo deriva da `keepa_snapshots.requested_at`.
+- Il target scatta con `currentPrice <= targetPrice`; il lifecycle è
+  `pending_confirmation` → `active` → `notifying_target` → `target_notified`.
+  `target_notified` è lo stato finale operativo ed è escluso dai run
+  successivi, senza cancellazione automatica del record storico.
+- L'email target è one-shot. La claim è atomica con lease di 60 minuti; una
+  claim stale viene recuperata tramite verifica provider, senza reinvio cieco
+  quando lo stato provider è incerto. La chiave di idempotenza Brevo è stabile
+  per alert ed evento target.
+- `target_reached_at` conserva write-once la prima rilevazione economica del
+  raggiungimento target e `target_reached_price` la Buy Box rilevata in quel
+  momento; `notified_at` resta separato dall'evento economico. Questi outcome
+  sono dati proprietari AFFARIO destinati al futuro backtesting.
+- L'invio reale della notifica intermedia e lo scheduler/cron concreto restano
+  fuori scope; la funzione successiva non è avviata.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -321,8 +341,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 041 | Completata — highlight coverage-aware per minimo 12 mesi e minimo certificabile da quando disponibile |
 | 042 | Completata — Prezzo Obiettivo AFFARIO come Q25 Buy Box 90 giorni ponderato per durata e Risparmio Potenziale positivo |
 | 043 | **COMPLETATA** — alert reale email-only sull'exact ASIN con target server-side, stato iniziale `pending_confirmation` e conferma POST esplicita prima dello stato `active`; scheduler/motore automatico fuori scope |
+| 044 | **COMPLETATA** — motore target provider-agnostic aggregato per exact ASIN, ciclo `active` → `notifying_target` → `target_notified`, claim atomica recuperabile, idempotenza provider e outcome write-once `target_reached_at`/`target_reached_price`; record storico conservato, scheduler/cron concreto e intermediate reale fuori scope |
 
-Totale associazioni registrate: **35**.
+Totale associazioni registrate: **36**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -356,20 +377,34 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 
 ## 10. Uso futuro della capacità Keepa
 
-### 10.1 Scheduler alert futuro
+### 10.1 Motore alert aggregato e scheduler futuro
 
-Direzione già stabilita, non ancora implementata:
+La Funzione 044 ha completato la parte provider-agnostic del motore:
 
-- aggregare il lavoro per ASIN;
-- un controllo deve servire tutti gli alert dello stesso ASIN;
+- monitorare ordinariamente soltanto gli alert `active`;
+- aggregare obbligatoriamente il lavoro per exact ASIN: un controllo prodotto
+  serve tutti gli alert dello stesso ASIN;
 - cache valida significa zero token;
-- usare frequenza dinamica;
-- distribuire nelle 24 ore la capacità Keepa, compresa la notte;
-- controllare più frequentemente i prodotti vicini al target;
+- usare le frequenze dinamiche V1 oltre 15% → 12h, oltre 8% e fino a 15% → 6h,
+  oltre 3% e fino a 8% → 3h, fino a 3% incluso → 1h, applicando al gruppo
+  l'intervallo più breve richiesto e basando l'ultimo controllo su
+  `keepa_snapshots.requested_at`;
+- considerare raggiunto il target quando `currentPrice <= targetPrice`;
+- conservare write-once `target_reached_at` e `target_reached_price` come
+  prima rilevazione economica e Buy Box di quel momento, distinte da
+  `notified_at`, come dati proprietari AFFARIO per il futuro backtesting;
+- usare il lifecycle `pending_confirmation` → `active` → `notifying_target` →
+  `target_notified`, con claim atomica, lease di 60 minuti e recupero stale
+  tramite verifica provider;
+- usare una chiave di idempotenza Brevo stabile per alert ed evento target e
+  non reinviare alla cieca quando lo stato provider è incerto;
+- inviare l'email target una sola volta senza cancellare il record storico,
+  che nello stato `target_notified` non viene più monitorato;
 - evitare polling per singolo utente;
-- progettare una protezione cross-instance prima di traffico elevato.
+- mantenere provider-agnostic la logica richiamabile.
 
-La deduplicazione definitiva distribuita non è implementata.
+Il provider concreto scheduler/cron e l'invio reale degli alert intermedi non
+sono implementati nella Funzione 044. La funzione successiva non è avviata.
 
 ### 10.2 Decisione roadmap — prefetch/catalogo caldo futuro
 
@@ -474,7 +509,7 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **043**, validata tecnicamente e con migration
+- Ultima funzione completata: **044**, validata tecnicamente e con migration
   remota applicata.
 - Funzione successiva: **non avviata**.
 

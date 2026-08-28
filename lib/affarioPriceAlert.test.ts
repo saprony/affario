@@ -176,6 +176,24 @@ test("il server usa il target affidabile della pipeline per l'exact ASIN", () =>
   );
   assert.equal(isActivePriceAlertStatus("pending_confirmation"), false);
   assert.equal(isActivePriceAlertStatus("active"), true);
+  assert.equal(isActivePriceAlertStatus("target_notified"), false);
+});
+
+test("il client riconosce lo stato finale target_notified", async () => {
+  const result = await requestAffarioPriceAlertOnce(
+    "B0ABCDEFGH",
+    "utente@example.it",
+    { inFlight: false },
+    async () =>
+      successfulResponse({
+        alreadyExists: true,
+        confirmationEmailSent: false,
+        alertStatus: "target_notified",
+      })
+  );
+
+  assert.equal(result?.alreadyExists, true);
+  assert.equal(result?.alertStatus, "target_notified");
 });
 
 test("il submit è single-flight e riapre il gate al termine", async () => {

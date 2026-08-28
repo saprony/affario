@@ -5,6 +5,7 @@ import DeleteAlertButton from "@/components/DeleteAlertButton";
 import {
   PRICE_ALERT_ACTIVE_STATUS,
   PRICE_ALERT_PENDING_STATUS,
+  PRICE_ALERT_TARGET_NOTIFIED_STATUS,
 } from "@/lib/affarioPriceAlert";
 import {
   hashAlertManagementToken,
@@ -100,11 +101,13 @@ export default async function AlertManagementPage({
   const alert = await findAlert(token);
   const isPending = alert?.status === PRICE_ALERT_PENDING_STATUS;
   const isActive = alert?.status === PRICE_ALERT_ACTIVE_STATUS;
+  const isTargetNotified =
+    alert?.status === PRICE_ALERT_TARGET_NOTIFIED_STATUS;
 
   return (
     <main className="flex flex-1 items-center bg-slate-50 px-4 py-10 text-gray-900 sm:py-14">
       <section className="mx-auto w-full max-w-xl rounded-3xl bg-white p-6 shadow-xl sm:p-10">
-        {!alert || (!isPending && !isActive) ? (
+        {!alert || (!isPending && !isActive && !isTargetNotified) ? (
           <AlertNotFound />
         ) : isPending ? (
           <>
@@ -119,13 +122,28 @@ export default async function AlertManagementPage({
             <AlertDetails alert={alert} />
             <ConfirmAlertButton token={token} />
           </>
-        ) : (
+        ) : isActive ? (
           <>
             <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
               Gestisci questo alert
             </h1>
             <p className="mt-4 leading-relaxed text-gray-600">
               Puoi eliminare definitivamente questa richiesta di alert.
+            </p>
+
+            <AlertDetails alert={alert} />
+
+            <DeleteAlertButton token={token} />
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+              Alert concluso
+            </h1>
+            <p className="mt-4 leading-relaxed text-gray-600">
+              Il Prezzo Obiettivo AFFARIO è stato raggiunto e la notifica
+              target è stata completata. Puoi eliminare il record se lo
+              desideri.
             </p>
 
             <AlertDetails alert={alert} />
