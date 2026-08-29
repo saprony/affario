@@ -9,6 +9,10 @@ import {
   KeepaClientError,
   normalizeKeepaAsin,
 } from "@/services/keepaClient";
+import {
+  getKeepaRetryAfterSeconds,
+  TEMPORARY_PRODUCT_DATA_MESSAGE,
+} from "@/services/keepaTemporaryUnavailable";
 import type { AffarioAdvice } from "@/types/affarioAdvice";
 import type { AffarioSavingsPotential } from "@/types/productAnalysis";
 
@@ -66,9 +70,18 @@ export type AffarioProductApiResponse = {
 function errorResponse(
   code: AffarioProductApiErrorCode,
   message: string,
-  status: number
+  status: number,
+  retryAfterSeconds?: number
 ): NextResponse<AffarioProductApiErrorResponse> {
-  return NextResponse.json({ error: { code, message } }, { status });
+  return NextResponse.json(
+    { error: { code, message } },
+    {
+      status,
+      ...(retryAfterSeconds === undefined
+        ? {}
+        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+    }
+  );
 }
 
 function logUnexpectedError(error: unknown): void {
@@ -79,6 +92,15 @@ function logUnexpectedError(error: unknown): void {
 
 function mapError(error: unknown): NextResponse<AffarioProductApiErrorResponse> {
   if (error instanceof KeepaClientError) {
+    if (error.code === "OUT_OF_TOKENS") {
+      return errorResponse(
+        "UPSTREAM_UNAVAILABLE",
+        TEMPORARY_PRODUCT_DATA_MESSAGE,
+        503,
+        getKeepaRetryAfterSeconds(error)
+      );
+    }
+
     if (error.code === "INVALID_ASIN") {
       return errorResponse(
         "INVALID_ASIN",

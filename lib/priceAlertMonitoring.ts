@@ -1,8 +1,8 @@
 export const PRICE_ALERT_CHECK_INTERVAL_MS = {
-  FAR: 12 * 60 * 60 * 1_000,
-  MEDIUM: 6 * 60 * 60 * 1_000,
-  NEAR: 3 * 60 * 60 * 1_000,
-  IMMINENT: 60 * 60 * 1_000,
+  FAR: 24 * 60 * 60 * 1_000,
+  MEDIUM: 12 * 60 * 60 * 1_000,
+  NEAR: 6 * 60 * 60 * 1_000,
+  IMMINENT: 2 * 60 * 60 * 1_000,
 } as const;
 
 export type PriceAlertSchedulingTarget = {

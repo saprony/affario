@@ -118,7 +118,8 @@ export async function searchKeepaProductCandidates(
 ): Promise<KeepaProductSearchProviderResult> {
   const preparedQuery = prepareAffarioProductSearchQuery(query);
   const keepaResult = await searchKeepaProducts(
-    preparedQuery.normalizedQuery
+    preparedQuery.normalizedQuery,
+    { context: "interactive" }
   );
   const candidates = keepaResult.products
     .slice(0, AFFARIO_PRODUCT_SEARCH_MAX_RESULTS)

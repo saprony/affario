@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 28 agosto 2026.
+Ultimo aggiornamento: 29 agosto 2026.
 
 ## 1. Scopo e autorità
 
@@ -25,9 +25,9 @@ Prima di iniziare qualsiasi nuova funzione:
 
 - Branch: `master`.
 - Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 044**, validata tecnicamente e con
-  migration remota applicata.
-- La funzione successiva non è avviata.
+- Ultima funzione completata: **FUNZIONE 045**, validata tecnicamente e con
+  migration remote applicate. Il job Cron resta inattivo e l'attivazione reale
+  è rinviata al go-live.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -136,10 +136,12 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La **FUNZIONE 044 è COMPLETATA**: il monitoraggio ordinario considera
   esclusivamente alert `active`, aggregati obbligatoriamente per exact ASIN;
   una verifica prodotto serve tutti gli alert dello stesso ASIN.
-- Le frequenze V1 dipendono dalla distanza dal target: oltre il 15% → 12h,
-  oltre l'8% e fino al 15% → 6h, oltre il 3% e fino all'8% → 3h, fino al 3%
-  incluso → 1h. L'intervallo del gruppo è la frequenza più breve richiesta da
-  uno degli alert e l'ultimo controllo deriva da `keepa_snapshots.requested_at`.
+- Le frequenze originarie della Funzione 044 sono superate dalla calibrazione
+  conservativa V1 della Funzione 045: oltre il 15% → 24h, oltre l'8% e fino al
+  15% → 12h, oltre il 3% e fino all'8% → 6h, fino al 3% incluso → 2h. I boundary
+  canonici sono 15% → 12h, 8% → 6h e 3% → 2h. L'intervallo del gruppo è la
+  frequenza più breve richiesta da uno degli alert e l'ultimo controllo deriva
+  da `keepa_snapshots.requested_at`.
 - Il target scatta con `currentPrice <= targetPrice`; il lifecycle è
   `pending_confirmation` → `active` → `notifying_target` → `target_notified`.
   `target_notified` è lo stato finale operativo ed è escluso dai run
@@ -152,8 +154,47 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   raggiungimento target e `target_reached_price` la Buy Box rilevata in quel
   momento; `notified_at` resta separato dall'evento economico. Questi outcome
   sono dati proprietari AFFARIO destinati al futuro backtesting.
-- L'invio reale della notifica intermedia e lo scheduler/cron concreto restano
-  fuori scope; la funzione successiva non è avviata.
+- La **FUNZIONE 045 è COMPLETATA**: lo scheduler scelto è un unico Supabase Cron
+  orario (`pg_cron` → `pg_net`) che richiama il `POST` interno protetto
+  `/api/internal/price-alert-monitoring`; le frequenze dinamiche 2h/6h/12h/24h
+  restano responsabilità del motore e non vengono replicate in più cron.
+- L'endpoint usa il secret server-only dedicato
+  `ALERT_MONITORING_CRON_SECRET`; `ALERT_MONITORING_ENABLED` abilita il motore
+  soltanto con il valore esatto `true` ed è locale su `false`. La migration
+  applicata ha creato il job `affario-price-alert-monitoring-hourly` inattivo,
+  senza URL o credenziali incorporati. I secret Vault di produzione non sono
+  configurati; configurazione Vercel e attivazione restano attività esplicite
+  del go-live.
+- Il batch iniziale resta configurabile con default massimo 5 exact ASIN per
+  run. Le richieste Keepa `interactive` hanno priorità sul contesto interno
+  `background_alert`: solo il background è soggetto alla riserva configurabile
+  `KEEPA_BACKGROUND_TOKEN_RESERVE`, con default V1 di 120 token. Sul piano
+  corrente da 20 token/minuto equivale a circa 6 minuti di refill e al 10% del
+  bucket teorico massimo di 1.200 token, proteggendo il traffico utente.
+- La telemetria del bucket è acquisita passivamente da ogni risposta Keepa,
+  incluse le risposte non-200/429, e predisposta in uno stato persistente
+  aggregato server-only. Richieste interattive e background hanno contatori 429
+  separati; nessuna query, email, ASIN, chiave o payload raw viene conservato.
+- In assenza di telemetria è consentita atomicamente una sola richiesta
+  background di bootstrap alla volta. Un tentativo concluso senza osservazione
+  resta fail-closed, mentre un lease rimasto stale dopo un crash può essere
+  recuperato soltanto dopo la scadenza. In presenza di telemetria, la stima
+  conservativa parte dall'ultima osservazione, aggiunge il primo refill solo
+  allo scadere di `refillIn` e poi uno ogni 60 secondi; la riduzione di flusso
+  viene arrotondata e sottratta a `refillRate` secondo la semantica Keepa. La
+  stima non supera il bucket teorico e consente il vero HTTP background solo se
+  il saldo stimato dopo il costo specifico della richiesta resta almeno pari
+  alla riserva. Sotto
+  riserva o con stato non verificabile il refresh viene saltato senza impedire
+  letture DB, cache hit o valutazioni locali; un 429 background interrompe i
+  refresh successivi del run. Una failure nella persistenza della telemetria non
+  rompe la risposta `interactive`, mentre il background resta fail-closed. Il
+  report distingue ASIN non dovuti, rinviati per limite del run, fermati dalla
+  riserva e run interrotti da rate limit tramite
+  `backgroundDeferredForRunLimit` e le metriche dedicate. La migration runtime
+  è applicata; una migration correttiva limita `service_role` ai soli permessi
+  `SELECT`, `INSERT` e `UPDATE` previsti.
+- L'invio reale della notifica intermedia resta fuori scope.
 - `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
@@ -342,8 +383,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 042 | Completata — Prezzo Obiettivo AFFARIO come Q25 Buy Box 90 giorni ponderato per durata e Risparmio Potenziale positivo |
 | 043 | **COMPLETATA** — alert reale email-only sull'exact ASIN con target server-side, stato iniziale `pending_confirmation` e conferma POST esplicita prima dello stato `active`; scheduler/motore automatico fuori scope |
 | 044 | **COMPLETATA** — motore target provider-agnostic aggregato per exact ASIN, ciclo `active` → `notifying_target` → `target_notified`, claim atomica recuperabile, idempotenza provider e outcome write-once `target_reached_at`/`target_reached_price`; record storico conservato, scheduler/cron concreto e intermediate reale fuori scope |
+| 045 | **COMPLETATA** — endpoint POST interno protetto e kill switch fail-closed; Supabase Cron orario applicato ma inattivo; frequenze effettive 24h/12h/6h/2h, massimo 5 ASIN/run configurabile, fairness, priorità Keepa interactive, riserva background configurabile con default 120, telemetria bucket passiva, 429 distinti, background fail-closed, bootstrap/lease recuperabili e `backgroundDeferredForRunLimit` |
 
-Totale associazioni registrate: **36**.
+Totale associazioni registrate: **37**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -356,10 +398,22 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 - Richiesta prodotto corrente: `domain=8`, `stats=90`, `buybox=1`, storico incluso, nessun `offers`.
 - Costo tipico di un refresh prodotto: 3 token.
 - Cache reale verificata: primo refresh 3 token; richieste successive entro TTL 0 token.
+- La Funzione 045 acquisisce passivamente da ogni risposta i campi aggregati
+  `tokensLeft`, `tokensConsumed`, `refillRate`, `refillIn` e
+  `tokenFlowReduction`; `tokensLeft` può essere negativo. Non viene eseguita
+  alcuna richiesta dedicata alla telemetria.
+- È applicato uno stato runtime server-only che conserva
+  l'ultima osservazione valida per `observed_at` e incrementa atomicamente i
+  contatori 429 `interactive` e `background_alert`. Una risposta più vecchia
+  non può sovrascrivere un bucket osservato più recentemente. Lo stato iniziale
+  è vuoto e verrà popolato soltanto passivamente da future richieste reali.
 - Provider ricerca keyword server-only operativo: `domain=8`, una singola richiesta Keepa, massimo 10 candidati AFFARIO conservati e nessun endpoint pubblico.
 - Test reale `dreame matrix`: 1 chiamata Keepa, costo reale 10 token, 20 risultati Keepa ricevuti e 10 candidati AFFARIO conservati.
 - Nei risultati del test è stato rilevato rumore: un accessorio e un prodotto concorrente. Il ranking AFFARIO esterno corregge questo rumore con forte priorità al match reale del brand e mantiene la famiglia Matrix10 Ultra/Pro come più rilevante.
-- La ricerca keyword non accede a Supabase e non persiste prodotti, varianti, snapshot o risultati.
+- La ricerca keyword non persiste in Supabase prodotti, varianti, snapshot,
+  query o risultati. Quando raggiunge Keepa, aggiorna soltanto la telemetria
+  runtime aggregata server-side, priva di PII, condivisa con le altre chiamate
+  al provider.
 
 ### 9.2 Catalogo e primo prodotto reale
 
@@ -377,7 +431,7 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
 
 ## 10. Uso futuro della capacità Keepa
 
-### 10.1 Motore alert aggregato e scheduler futuro
+### 10.1 Motore alert aggregato e scheduler preparato
 
 La Funzione 044 ha completato la parte provider-agnostic del motore:
 
@@ -385,8 +439,9 @@ La Funzione 044 ha completato la parte provider-agnostic del motore:
 - aggregare obbligatoriamente il lavoro per exact ASIN: un controllo prodotto
   serve tutti gli alert dello stesso ASIN;
 - cache valida significa zero token;
-- usare le frequenze dinamiche V1 oltre 15% → 12h, oltre 8% e fino a 15% → 6h,
-  oltre 3% e fino a 8% → 3h, fino a 3% incluso → 1h, applicando al gruppo
+- usare le frequenze dinamiche V1 calibrate nella Funzione 045: oltre 15% →
+  24h, oltre 8% e fino a 15% → 12h, oltre 3% e fino a 8% → 6h, fino a 3%
+  incluso → 2h, applicando al gruppo
   l'intervallo più breve richiesto e basando l'ultimo controllo su
   `keepa_snapshots.requested_at`;
 - considerare raggiunto il target quando `currentPrice <= targetPrice`;
@@ -403,8 +458,24 @@ La Funzione 044 ha completato la parte provider-agnostic del motore:
 - evitare polling per singolo utente;
 - mantenere provider-agnostic la logica richiamabile.
 
-Il provider concreto scheduler/cron e l'invio reale degli alert intermedi non
-sono implementati nella Funzione 044. La funzione successiva non è avviata.
+La Funzione 045 ha completato il collegamento operativo mediante un solo
+Supabase Cron orario. Il cron è predisposto per richiamare via `pg_net`
+l'endpoint POST interno
+protetto, mentre il motore conserva le frequenze dinamiche 2h/6h/12h/24h e un
+limite prudente di 5 exact ASIN per run. Le frequenze originarie 044 sono
+superate: l'unica configurazione operativa è 24h/12h/6h/2h. La migration Cron è
+applicata e il job `affario-price-alert-monitoring-hourly` resta `active=false`;
+URL e secret verranno letti da Vault soltanto dopo la configurazione di
+produzione. `ALERT_MONITORING_ENABLED=false`, il kill switch resta fail-closed e
+l'attivazione è rinviata al go-live esplicitamente autorizzato. L'invio reale
+degli alert intermedi non è implementato. Le migration runtime applicate
+preparano lo stato Keepa aggregato: priorità `interactive` sul background,
+riserva V1 configurabile con default 120 token,
+lease atomico cross-instance, bootstrap singolo recuperabile dopo lease stale,
+telemetria passiva e contatori 429 separati. L'ordinamento dei gruppi usa prima
+gli ASIN mai controllati, poi il `dueAt` più vecchio e infine l'exact ASIN come
+tie-break; `backgroundDeferredForRunLimit` resta distinto da riserva, rate limit
+e gruppi non ancora dovuti.
 
 ### 10.2 Decisione roadmap — prefetch/catalogo caldo futuro
 
@@ -504,13 +575,14 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - La Funzione 013 non ha una mappatura canonica certa: non inventarla.
 - La formula definitiva dell'Affario Score deve ancora essere validata e definita sui dati reali; i valori demo restano provvisori.
 - La risposta tecnica definitiva Amazon è pendente e blocca la pubblicazione delle funzionalità reali Keepa/alert.
-- Lo scheduler alert reale è futuro e non implementato.
+- Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
+  attivato; resta inattivo fino al go-live esplicitamente autorizzato.
 - Il lock distribuito della cache è futuro e va risolto prima di traffico elevato.
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **044**, validata tecnicamente e con migration
-  remota applicata.
+- Ultima funzione completata: **045**, validata tecnicamente e con migration
+  remote applicate; cron installato ma inattivo.
 - Funzione successiva: **non avviata**.
 
 `PublicHome`, deploy e funzioni successive restano invariati.

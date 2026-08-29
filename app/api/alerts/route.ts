@@ -23,6 +23,10 @@ import {
   KeepaClientError,
   normalizeKeepaAsin,
 } from "@/services/keepaClient";
+import {
+  getKeepaRetryAfterSeconds,
+  TEMPORARY_PRODUCT_DATA_MESSAGE,
+} from "@/services/keepaTemporaryUnavailable";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
 type AlertErrorCode =
@@ -31,8 +35,21 @@ type AlertErrorCode =
   | "PRODUCT_UNAVAILABLE"
   | "SAVE_FAILED";
 
-function errorResponse(code: AlertErrorCode, message: string, status: number) {
-  return NextResponse.json({ error: { code, message } }, { status });
+function errorResponse(
+  code: AlertErrorCode,
+  message: string,
+  status: number,
+  retryAfterSeconds?: number
+) {
+  return NextResponse.json(
+    { error: { code, message } },
+    {
+      status,
+      ...(retryAfterSeconds === undefined
+        ? {}
+        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+    }
+  );
 }
 
 function invalidAlertResponse() {
@@ -119,6 +136,15 @@ export async function POST(request: Request) {
       savingsPotential: result.potentialSavingsAnalysis.savingsPotential,
     });
   } catch (error) {
+    if (error instanceof KeepaClientError && error.code === "OUT_OF_TOKENS") {
+      return errorResponse(
+        "PRODUCT_UNAVAILABLE",
+        TEMPORARY_PRODUCT_DATA_MESSAGE,
+        503,
+        getKeepaRetryAfterSeconds(error)
+      );
+    }
+
     if (
       error instanceof KeepaClientError ||
       error instanceof AffarioProductLookupError

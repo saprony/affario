@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createPriceAlertCheckRunner,
+  PriceAlertMonitoringLookupControlError,
   TARGET_NOTIFICATION_CLAIM_LEASE_MS,
   type PriceAlertMonitoringDependencies,
   type PriceAlertMonitoringRecord,
@@ -40,6 +41,11 @@ type FakeHarnessOptions = {
   latestChecks?: ReadonlyMap<string, PriceAlertProductCheck | null>;
   lookupPrices?: ReadonlyMap<string, number | null>;
   cacheHits?: ReadonlySet<string>;
+  lookupErrors?: ReadonlyMap<string, unknown>;
+  tokenBudgetStatuses?: ReadonlyMap<
+    string,
+    "OK" | "RESERVE" | "EXHAUSTED" | "UNKNOWN"
+  >;
 };
 
 function createFakeHarness({
@@ -48,13 +54,15 @@ function createFakeHarness({
     [
       PRIMARY_ASIN,
       {
-        requestedAt: "2026-08-28T08:00:00.000Z",
+        requestedAt: "2026-08-28T05:00:00.000Z",
         currentPrice: 105,
       },
     ],
   ]),
   lookupPrices = new Map([[PRIMARY_ASIN, 99]]),
   cacheHits = new Set(),
+  lookupErrors = new Map(),
+  tokenBudgetStatuses = new Map(),
 }: FakeHarnessOptions = {}) {
   const records = alerts.map((alert) => ({ ...alert }));
   const lookupCalls: string[] = [];
@@ -90,10 +98,16 @@ function createFakeHarness({
     },
     async lookupProduct(exactAsin) {
       lookupCalls.push(exactAsin);
+
+      if (lookupErrors.has(exactAsin)) {
+        throw lookupErrors.get(exactAsin);
+      }
+
       return {
         exactAsin,
         currentPrice: lookupPrices.get(exactAsin) ?? null,
         cacheHit: cacheHits.has(exactAsin),
+        tokenBudgetStatus: tokenBudgetStatuses.get(exactAsin) ?? "OK",
       };
     },
     async recordTargetOutcome(alertId, reachedPrice, reachedAt) {
@@ -255,6 +269,117 @@ test("ASIN differenti sono gruppi separati e maxAsins resta opzionale", async ()
   assert.equal(report.uniqueAsins, 2);
   assert.equal(report.productLookups, 1);
   assert.equal(report.deferredAsins, 1);
+  assert.equal(report.backgroundDeferredForRunLimit, 1);
+});
+
+test("il batch serve prima ASIN mai controllati e poi i controlli piu vecchi", async () => {
+  const neverCheckedAsin = "B000000002";
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+      createAlert({ id: 3, productId: neverCheckedAsin }),
+    ],
+    latestChecks: new Map([
+      [
+        PRIMARY_ASIN,
+        {
+          requestedAt: "2026-08-28T05:00:00.000Z",
+          currentPrice: 105,
+        },
+      ],
+      [
+        SECONDARY_ASIN,
+        {
+          requestedAt: "2026-08-28T01:00:00.000Z",
+          currentPrice: 105,
+        },
+      ],
+      [neverCheckedAsin, null],
+    ]),
+    lookupPrices: new Map([
+      [PRIMARY_ASIN, 110],
+      [SECONDARY_ASIN, 110],
+      [neverCheckedAsin, 110],
+    ]),
+  });
+
+  const report = await harness.run({ maxAsins: 2 });
+
+  assert.deepEqual(harness.lookupCalls, [neverCheckedAsin, SECONDARY_ASIN]);
+  assert.equal(report.dueAsins, 2);
+  assert.equal(report.deferredAsins, 1);
+  assert.equal(report.backgroundDeferredForRunLimit, 1);
+});
+
+test("un gruppo non dovuto non consuma il limite del batch", async () => {
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+    ],
+    latestChecks: new Map([
+      [
+        PRIMARY_ASIN,
+        {
+          requestedAt: "2026-08-28T11:30:00.000Z",
+          currentPrice: 102,
+        },
+      ],
+      [
+        SECONDARY_ASIN,
+        {
+          requestedAt: "2026-08-28T09:59:59.000Z",
+          currentPrice: 102,
+        },
+      ],
+    ]),
+    lookupPrices: new Map([[SECONDARY_ASIN, 110]]),
+  });
+
+  const report = await harness.run({ maxAsins: 1 });
+
+  assert.deepEqual(harness.snapshotCalls, [PRIMARY_ASIN, SECONDARY_ASIN]);
+  assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
+  assert.equal(report.skippedNotDue, 1);
+  assert.equal(report.dueAsins, 1);
+  assert.equal(report.deferredAsins, 0);
+  assert.equal(report.backgroundDeferredForRunLimit, 0);
+});
+
+test("la fairness ordina per dueAt e non privilegia la fascia piu vicina", async () => {
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+    ],
+    latestChecks: new Map([
+      [
+        PRIMARY_ASIN,
+        {
+          requestedAt: "2026-08-27T11:00:00.000Z",
+          currentPrice: 116,
+        },
+      ],
+      [
+        SECONDARY_ASIN,
+        {
+          requestedAt: "2026-08-28T08:00:00.000Z",
+          currentPrice: 103,
+        },
+      ],
+    ]),
+    lookupPrices: new Map([
+      [PRIMARY_ASIN, 110],
+      [SECONDARY_ASIN, 110],
+    ]),
+  });
+
+  const report = await harness.run({ maxAsins: 1 });
+
+  assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
+  assert.equal(report.deferredAsins, 1);
+  assert.equal(report.backgroundDeferredForRunLimit, 1);
 });
 
 test("target differenti usano l'intervallo più breve del gruppo", async () => {
@@ -300,7 +425,7 @@ test("snapshot recente viene saltata, snapshot scaduta e assente controllate", a
       [
         SECONDARY_ASIN,
         {
-          requestedAt: "2026-08-28T10:59:59.000Z",
+          requestedAt: "2026-08-28T09:59:59.000Z",
           currentPrice: 102,
         },
       ],
@@ -315,7 +440,85 @@ test("snapshot recente viene saltata, snapshot scaduta e assente controllate", a
   const report = await harness.run();
 
   assert.equal(report.skippedNotDue, 1);
-  assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN, thirdAsin]);
+  assert.deepEqual(harness.lookupCalls, [thirdAsin, SECONDARY_ASIN]);
+});
+
+test("la riserva background ferma il refresh senza valutare o notificare", async () => {
+  const harness = createFakeHarness({
+    latestChecks: new Map([[PRIMARY_ASIN, null]]),
+    lookupErrors: new Map([
+      [
+        PRIMARY_ASIN,
+        new PriceAlertMonitoringLookupControlError(
+          "TOKEN_RESERVE",
+          "RESERVE"
+        ),
+      ],
+    ]),
+  });
+
+  const report = await harness.run();
+
+  assert.equal(report.tokenBudgetStatus, "RESERVE");
+  assert.equal(report.backgroundSkippedForReserve, 1);
+  assert.equal(report.backgroundDeferredForRunLimit, 0);
+  assert.equal(report.skippedNotDue, 0);
+  assert.equal(report.keepaRateLimited, 0);
+  assert.equal(report.refreshedProducts, 0);
+  assert.equal(report.targetsReached, 0);
+  assert.equal(report.notificationsSent, 0);
+  assert.equal(harness.records[0]?.targetReachedAt, null);
+  assert.equal(harness.records[0]?.status, "active");
+});
+
+test("un 429 background interrompe i refresh successivi del run", async () => {
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+    ],
+    latestChecks: new Map([
+      [PRIMARY_ASIN, null],
+      [SECONDARY_ASIN, null],
+    ]),
+    lookupErrors: new Map([
+      [
+        SECONDARY_ASIN,
+        new PriceAlertMonitoringLookupControlError(
+          "RATE_LIMITED",
+          "EXHAUSTED"
+        ),
+      ],
+    ]),
+  });
+
+  const report = await harness.run();
+
+  assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
+  assert.equal(report.tokenBudgetStatus, "EXHAUSTED");
+  assert.equal(report.keepaRateLimited, 1);
+  assert.equal(report.backgroundDeferredForRunLimit, 0);
+  assert.equal(report.backgroundSkippedForReserve, 0);
+  assert.equal(report.skippedNotDue, 0);
+  assert.equal(report.notificationsSent, 0);
+  assert.equal(report.deferredAsins, 0);
+  assert.equal(harness.records[0]?.targetReachedAt, null);
+  assert.equal(harness.records[1]?.targetReachedAt, null);
+});
+
+test("una cache hit background resta utilizzabile senza budget provider", async () => {
+  const harness = createFakeHarness({
+    latestChecks: new Map([[PRIMARY_ASIN, null]]),
+    cacheHits: new Set([PRIMARY_ASIN]),
+    tokenBudgetStatuses: new Map([[PRIMARY_ASIN, "UNKNOWN"]]),
+  });
+
+  const report = await harness.run();
+
+  assert.equal(report.cacheHits, 1);
+  assert.equal(report.refreshedProducts, 0);
+  assert.equal(report.backgroundSkippedForReserve, 0);
+  assert.equal(report.notificationsSent, 1);
 });
 
 test("success conclude in target_notified e il run successivo lo esclude", async () => {

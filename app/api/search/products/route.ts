@@ -8,6 +8,11 @@ import {
   AffarioProductSearchServiceError,
 } from "@/services/affarioProductSearch";
 import { searchAffarioProductsWithFallback } from "@/services/affarioProductSearchWithFallback";
+import { KeepaClientError } from "@/services/keepaClient";
+import {
+  getKeepaRetryAfterSeconds,
+  TEMPORARY_PRODUCT_DATA_MESSAGE,
+} from "@/services/keepaTemporaryUnavailable";
 import type { AffarioProductSearchWithFallbackResult } from "@/types/productSearch";
 
 export type AffarioProductSearchApiErrorCode =
@@ -29,9 +34,18 @@ export type AffarioProductSearchApiSuccessResponse = {
 function errorResponse(
   code: AffarioProductSearchApiErrorCode,
   message: string,
-  status: number
+  status: number,
+  retryAfterSeconds?: number
 ): NextResponse<AffarioProductSearchApiErrorResponse> {
-  return NextResponse.json({ error: { code, message } }, { status });
+  return NextResponse.json(
+    { error: { code, message } },
+    {
+      status,
+      ...(retryAfterSeconds === undefined
+        ? {}
+        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+    }
+  );
 }
 
 function mapError(
@@ -45,6 +59,15 @@ function mapError(
     };
 
     return errorResponse(error.code, messages[error.code], 400);
+  }
+
+  if (error instanceof KeepaClientError && error.code === "OUT_OF_TOKENS") {
+    return errorResponse(
+      "SERVICE_UNAVAILABLE",
+      TEMPORARY_PRODUCT_DATA_MESSAGE,
+      503,
+      getKeepaRetryAfterSeconds(error)
+    );
   }
 
   if (error instanceof AffarioProductSearchServiceError) {

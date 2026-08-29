@@ -14,6 +14,8 @@ import {
 } from "@/lib/analyzePriceHistory";
 import {
   normalizeKeepaAsin,
+  type KeepaRequestContext,
+  type KeepaTokenBudgetStatus,
   type KeepaUsage,
 } from "@/services/keepaClient";
 import { getAffarioProductCandidateByAsin } from "@/services/keepaProductAdapter";
@@ -104,6 +106,7 @@ export type AffarioProductLookupResult = {
   source: AffarioProductLookupSource;
   cacheHit: boolean;
   tokensConsumed: number;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
   keepaUsage?: KeepaUsage;
 };
 
@@ -513,7 +516,8 @@ function buildLookupResult(
   storedData: StoredLookupData,
   source: AffarioProductLookupSource,
   nowMilliseconds: number,
-  usage?: KeepaUsage
+  usage?: KeepaUsage,
+  tokenBudgetStatus: KeepaTokenBudgetStatus = "UNKNOWN"
 ): AffarioProductLookupResult {
   const {
     product,
@@ -667,12 +671,14 @@ function buildLookupResult(
     source,
     cacheHit: source === "DATABASE_CACHE",
     tokensConsumed,
+    tokenBudgetStatus,
     ...(usage ? { keepaUsage: usage } : {}),
   };
 }
 
 export async function getAffarioProductByAsin(
-  asin: string
+  asin: string,
+  options: { context?: KeepaRequestContext } = {}
 ): Promise<AffarioProductLookupResult> {
   const normalizedAsin = normalizeKeepaAsin(asin);
   const initialReadTime = Date.now();
@@ -695,7 +701,10 @@ export async function getAffarioProductByAsin(
   }
 
   const requestedAt = new Date().toISOString();
-  const keepaResult = await getAffarioProductCandidateByAsin(normalizedAsin);
+  const keepaResult = await getAffarioProductCandidateByAsin(
+    normalizedAsin,
+    options
+  );
 
   try {
     await persistKeepaProduct({
@@ -719,6 +728,7 @@ export async function getAffarioProductByAsin(
     refreshedStoredData,
     "KEEPA_REFRESH",
     refreshedReadTime,
-    keepaResult.usage
+    keepaResult.usage,
+    keepaResult.tokenBudgetStatus
   );
 }

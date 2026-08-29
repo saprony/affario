@@ -1,10 +1,25 @@
 import "server-only";
 
+import {
+  recordKeepaRuntimeObservation,
+  releaseKeepaBackgroundRequest,
+  tryAcquireKeepaBackgroundRequest,
+  type KeepaBackgroundRequestAcquisition,
+  type KeepaRequestContext,
+  type KeepaRuntimeObservation,
+  type KeepaTokenBudgetStatus,
+} from "@/services/keepaRuntimeState";
+
 const KEEPA_BASE_URL = "https://api.keepa.com/";
 const KEEPA_PRODUCT_ENDPOINT = "product";
 const KEEPA_SEARCH_ENDPOINT = "search";
 const AMAZON_ITALY_DOMAIN_ID = 8;
 const ASIN_PATTERN = /^[A-Z0-9]{10}$/;
+
+export const KEEPA_PRODUCT_REQUEST_ESTIMATED_TOKENS = 3;
+export const KEEPA_SEARCH_REQUEST_ESTIMATED_TOKENS = 10;
+
+export type { KeepaRequestContext, KeepaTokenBudgetStatus };
 
 export type KeepaImage = {
   l?: string;
@@ -97,6 +112,7 @@ export type KeepaUsage = {
   tokensLeft: number;
   refillIn: number;
   refillRate: number;
+  tokenFlowReduction: number;
   processingTimeInMs: number;
 };
 
@@ -104,6 +120,7 @@ export type KeepaProductResult = {
   product: KeepaProductSummary;
   rawProduct: KeepaRawProduct;
   usage: KeepaUsage;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
 };
 
 export type KeepaProductSearchResult = {
@@ -118,6 +135,7 @@ export type KeepaClientErrorCode =
   | "NETWORK_ERROR"
   | "KEEPA_HTTP_ERROR"
   | "OUT_OF_TOKENS"
+  | "BACKGROUND_TOKEN_RESERVE"
   | "INVALID_RESPONSE"
   | "PRODUCT_NOT_FOUND";
 
@@ -125,7 +143,9 @@ export class KeepaClientError extends Error {
   constructor(
     message: string,
     public readonly code: KeepaClientErrorCode,
-    public readonly httpStatus?: number
+    public readonly httpStatus?: number,
+    public readonly retryAfterSeconds?: number,
+    public readonly tokenBudgetStatus?: KeepaTokenBudgetStatus
   ) {
     super(message);
     this.name = "KeepaClientError";
@@ -190,11 +210,25 @@ function readInteger(
 }
 
 function mapUsage(payload: Record<string, unknown>): KeepaUsage {
+  const tokenFlowReduction = payload.tokenFlowReduction;
+
+  if (
+    typeof tokenFlowReduction !== "number" ||
+    !Number.isFinite(tokenFlowReduction) ||
+    tokenFlowReduction < 0
+  ) {
+    throw new KeepaClientError(
+      "La risposta Keepa non contiene dati di utilizzo validi.",
+      "INVALID_RESPONSE"
+    );
+  }
+
   return {
     tokensConsumed: readInteger(payload, "tokensConsumed"),
     tokensLeft: readInteger(payload, "tokensLeft", true),
     refillIn: readInteger(payload, "refillIn"),
     refillRate: readInteger(payload, "refillRate"),
+    tokenFlowReduction,
     processingTimeInMs: readInteger(payload, "processingTimeInMs"),
   };
 }
@@ -749,63 +783,227 @@ function mapProductSearch(
   return mappedProducts;
 }
 
-async function requestKeepa(
-  requestUrl: URL
-): Promise<Record<string, unknown>> {
-  let response: Response;
+type KeepaHttpRequestOptions = {
+  context: KeepaRequestContext;
+  estimatedTokenCost: number;
+};
 
-  try {
-    response = await fetch(requestUrl, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-  } catch {
-    throw new KeepaClientError(
-      "Non è stato possibile connettersi a Keepa.",
-      "NETWORK_ERROR"
-    );
+type KeepaHttpRequestResult = {
+  payload: Record<string, unknown>;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
+};
+
+type KeepaRuntimeObservationInput = Parameters<
+  typeof recordKeepaRuntimeObservation
+>[0];
+
+export type KeepaHttpRequesterDependencies = {
+  request: (input: URL, init: RequestInit) => Promise<Response>;
+  acquireBackgroundRequest: (
+    estimatedTokenCost: number,
+    now: Date
+  ) => Promise<KeepaBackgroundRequestAcquisition>;
+  recordObservation: (
+    input: KeepaRuntimeObservationInput
+  ) => Promise<void>;
+  releaseBackgroundRequest: (leaseStartedAt: string) => Promise<void>;
+  clock: () => Date;
+};
+
+export function parseKeepaRuntimeObservation(
+  payload: unknown,
+  observedAt: string
+): KeepaRuntimeObservation | null {
+  if (!isRecord(payload) || !Number.isFinite(Date.parse(observedAt))) {
+    return null;
   }
 
-  if (response.status === 429) {
-    throw new KeepaClientError(
-      "I token Keepa disponibili sono esauriti.",
-      "OUT_OF_TOKENS",
-      response.status
-    );
+  const {
+    tokensLeft,
+    tokensConsumed,
+    refillRate,
+    refillIn,
+    tokenFlowReduction,
+  } = payload;
+
+  if (
+    !Number.isSafeInteger(tokensLeft) ||
+    !Number.isSafeInteger(tokensConsumed) ||
+    (tokensConsumed as number) < 0 ||
+    !Number.isSafeInteger(refillRate) ||
+    (refillRate as number) < 0 ||
+    !Number.isSafeInteger(refillIn) ||
+    (refillIn as number) < 0 ||
+    typeof tokenFlowReduction !== "number" ||
+    !Number.isFinite(tokenFlowReduction) ||
+    tokenFlowReduction < 0
+  ) {
+    return null;
   }
 
-  if (!response.ok) {
-    throw new KeepaClientError(
-      `Keepa ha risposto con stato HTTP ${response.status}.`,
-      "KEEPA_HTTP_ERROR",
-      response.status
-    );
-  }
-
-  let payload: unknown;
-
-  try {
-    payload = await response.json();
-  } catch {
-    throw new KeepaClientError(
-      "Keepa ha restituito una risposta JSON non valida.",
-      "INVALID_RESPONSE"
-    );
-  }
-
-  if (!isRecord(payload)) {
-    throw new KeepaClientError(
-      "Keepa ha restituito una risposta non valida.",
-      "INVALID_RESPONSE"
-    );
-  }
-
-  return payload;
+  return {
+    observedAt,
+    tokensLeft: tokensLeft as number,
+    tokensConsumed: tokensConsumed as number,
+    refillRate: refillRate as number,
+    refillInMs: refillIn as number,
+    tokenFlowReduction,
+  };
 }
 
+function getRetryAfterSeconds(
+  observation: KeepaRuntimeObservation | null
+): number | undefined {
+  return observation
+    ? Math.max(1, Math.ceil(observation.refillInMs / 1_000))
+    : undefined;
+}
+
+export function createKeepaHttpRequester(
+  dependencies: KeepaHttpRequesterDependencies
+) {
+  async function releaseBackgroundLeaseQuietly(
+    leaseStartedAt: string | null
+  ): Promise<void> {
+    if (!leaseStartedAt) {
+      return;
+    }
+
+    try {
+      await dependencies.releaseBackgroundRequest(leaseStartedAt);
+    } catch {
+      // The short database lease expires automatically.
+    }
+  }
+
+  return async function requestKeepa(
+    requestUrl: URL,
+    options: KeepaHttpRequestOptions
+  ): Promise<KeepaHttpRequestResult> {
+    let acquisition: KeepaBackgroundRequestAcquisition = {
+      allowed: true,
+      budgetStatus: "OK",
+      leaseStartedAt: null,
+    };
+
+    if (options.context === "background_alert") {
+      try {
+        acquisition = await dependencies.acquireBackgroundRequest(
+          options.estimatedTokenCost,
+          dependencies.clock()
+        );
+      } catch {
+        throw new KeepaClientError(
+          "Il budget background non è verificabile.",
+          "BACKGROUND_TOKEN_RESERVE",
+          undefined,
+          undefined,
+          "UNKNOWN"
+        );
+      }
+
+      if (!acquisition.allowed || !acquisition.leaseStartedAt) {
+        throw new KeepaClientError(
+          "La capacità background è riservata alle richieste interattive.",
+          "BACKGROUND_TOKEN_RESERVE",
+          undefined,
+          undefined,
+          acquisition.budgetStatus
+        );
+      }
+    }
+
+    let response: Response;
+
+    try {
+      response = await dependencies.request(requestUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+    } catch {
+      await releaseBackgroundLeaseQuietly(acquisition.leaseStartedAt);
+      throw new KeepaClientError(
+        "Non è stato possibile connettersi a Keepa.",
+        "NETWORK_ERROR"
+      );
+    }
+
+    const observedAt = dependencies.clock().toISOString();
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      // A non-JSON body has no safe bucket observation to persist.
+    }
+
+    const observation = parseKeepaRuntimeObservation(payload, observedAt);
+
+    try {
+      await dependencies.recordObservation({
+        observedAt,
+        observation,
+        context: options.context,
+        rateLimited: response.status === 429,
+        backgroundLeaseStartedAt: acquisition.leaseStartedAt,
+      });
+    } catch {
+      if (options.context === "background_alert") {
+        await releaseBackgroundLeaseQuietly(acquisition.leaseStartedAt);
+        throw new KeepaClientError(
+          "La telemetria del budget background non è disponibile.",
+          "BACKGROUND_TOKEN_RESERVE",
+          undefined,
+          undefined,
+          "UNKNOWN"
+        );
+      }
+    }
+
+    if (response.status === 429) {
+      throw new KeepaClientError(
+        "I token Keepa disponibili sono esauriti.",
+        "OUT_OF_TOKENS",
+        response.status,
+        getRetryAfterSeconds(observation),
+        "EXHAUSTED"
+      );
+    }
+
+    if (!response.ok) {
+      throw new KeepaClientError(
+        `Keepa ha risposto con stato HTTP ${response.status}.`,
+        "KEEPA_HTTP_ERROR",
+        response.status
+      );
+    }
+
+    if (!isRecord(payload)) {
+      throw new KeepaClientError(
+        "Keepa ha restituito una risposta JSON non valida.",
+        "INVALID_RESPONSE"
+      );
+    }
+
+    return {
+      payload,
+      tokenBudgetStatus: acquisition.budgetStatus,
+    };
+  };
+}
+
+const requestKeepa = createKeepaHttpRequester({
+  request: (input, init) => fetch(input, init),
+  acquireBackgroundRequest: tryAcquireKeepaBackgroundRequest,
+  recordObservation: recordKeepaRuntimeObservation,
+  releaseBackgroundRequest: releaseKeepaBackgroundRequest,
+  clock: () => new Date(),
+});
+
 export async function searchKeepaProducts(
-  query: string
+  query: string,
+  options: { context?: KeepaRequestContext } = {}
 ): Promise<KeepaProductSearchResult> {
   const searchTerm = query.trim();
 
@@ -824,7 +1022,10 @@ export async function searchKeepaProducts(
   requestUrl.searchParams.set("term", searchTerm);
   requestUrl.searchParams.set("history", "0");
 
-  const payload = await requestKeepa(requestUrl);
+  const { payload } = await requestKeepa(requestUrl, {
+    context: options.context ?? "interactive",
+    estimatedTokenCost: KEEPA_SEARCH_REQUEST_ESTIMATED_TOKENS,
+  });
 
   return {
     products: mapProductSearch(payload),
@@ -833,7 +1034,8 @@ export async function searchKeepaProducts(
 }
 
 export async function getKeepaProductByAsin(
-  asin: string
+  asin: string,
+  options: { context?: KeepaRequestContext } = {}
 ): Promise<KeepaProductResult> {
   const normalizedAsin = normalizeKeepaAsin(asin);
   const apiKey = getApiKey();
@@ -844,7 +1046,10 @@ export async function getKeepaProductByAsin(
   requestUrl.searchParams.set("stats", "90");
   requestUrl.searchParams.set("buybox", "1");
 
-  const payload = await requestKeepa(requestUrl);
+  const { payload, tokenBudgetStatus } = await requestKeepa(requestUrl, {
+    context: options.context ?? "interactive",
+    estimatedTokenCost: KEEPA_PRODUCT_REQUEST_ESTIMATED_TOKENS,
+  });
 
   const mappedProduct = mapProduct(payload, normalizedAsin);
 
@@ -852,5 +1057,6 @@ export async function getKeepaProductByAsin(
     product: mappedProduct.summary,
     rawProduct: mappedProduct.rawProduct,
     usage: mapUsage(payload),
+    tokenBudgetStatus,
   };
 }

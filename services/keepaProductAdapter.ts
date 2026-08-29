@@ -8,9 +8,11 @@ import {
   type KeepaIntegerArray,
   type KeepaPriceExtremeArray,
   type KeepaProductSummary,
+  type KeepaRequestContext,
   type KeepaRawProduct,
   type KeepaStatistics,
   type KeepaUsage,
+  type KeepaTokenBudgetStatus,
   type KeepaVariation,
 } from "@/services/keepaClient";
 import type { ExternalProductIdentifier } from "@/types/catalog";
@@ -190,6 +192,7 @@ export type AffarioProductCandidateResult = {
   product: AffarioProductCandidate;
   internalKeepaData: AffarioKeepaInternalData;
   usage: KeepaUsage;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
 };
 
 function buildAmazonImageUrl(fileName: string): string {
@@ -849,9 +852,10 @@ function getInternalKeepaData(
 }
 
 export async function getAffarioProductCandidateByAsin(
-  asin: string
+  asin: string,
+  options: { context?: KeepaRequestContext } = {}
 ): Promise<AffarioProductCandidateResult> {
-  const keepaResult = await getKeepaProductByAsin(asin);
+  const keepaResult = await getKeepaProductByAsin(asin, options);
 
   return {
     product: mapKeepaProductToAffarioCandidate(keepaResult.product),
@@ -860,5 +864,6 @@ export async function getAffarioProductCandidateByAsin(
       keepaResult.rawProduct
     ),
     usage: keepaResult.usage,
+    tokenBudgetStatus: keepaResult.tokenBudgetStatus,
   };
 }

@@ -14,6 +14,10 @@ import {
 } from "@/lib/priceAlertMonitoring";
 import { getAffarioProductByAsin } from "@/services/affarioProductLookup";
 import {
+  KeepaClientError,
+  type KeepaTokenBudgetStatus,
+} from "@/services/keepaClient";
+import {
   getTargetPriceAlertEmailEventStatus,
   sendTargetPriceAlertEmail,
 } from "@/services/brevoTransactionalEmail";
@@ -55,7 +59,18 @@ export type PriceAlertProductLookup = {
   exactAsin: string;
   currentPrice: number | null;
   cacheHit: boolean;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
 };
+
+export class PriceAlertMonitoringLookupControlError extends Error {
+  constructor(
+    public readonly reason: "TOKEN_RESERVE" | "RATE_LIMITED",
+    public readonly tokenBudgetStatus: KeepaTokenBudgetStatus
+  ) {
+    super("Price alert product lookup was stopped by provider capacity.");
+    this.name = "PriceAlertMonitoringLookupControlError";
+  }
+}
 
 export type TargetReachedOutcome = {
   status: "recorded" | "existing";
@@ -124,6 +139,7 @@ export type PriceAlertCheckReport = {
   uniqueAsins: number;
   dueAsins: number;
   deferredAsins: number;
+  backgroundDeferredForRunLimit: number;
   productLookups: number;
   cacheHits: number;
   refreshedProducts: number;
@@ -146,6 +162,9 @@ export type PriceAlertCheckReport = {
   schedulingFailures: number;
   lookupFailures: number;
   unavailablePrices: number;
+  tokenBudgetStatus: KeepaTokenBudgetStatus;
+  backgroundSkippedForReserve: number;
+  keepaRateLimited: number;
 };
 
 type EligiblePriceAlert = PriceAlertMonitoringRecord & {
@@ -157,6 +176,13 @@ type StaleTargetClaim = PriceAlertMonitoringRecord & {
   targetNotificationClaimedAt: string;
   targetReachedAt: string;
   targetReachedPrice: number;
+};
+
+type ScheduledPriceAlertGroup = {
+  exactAsin: string;
+  alerts: EligiblePriceAlert[];
+  latestCheck: PriceAlertProductCheck | null;
+  dueAtMilliseconds: number | null;
 };
 
 function isPositivePrice(value: number): boolean {
@@ -248,6 +274,28 @@ function groupAlertsByExactAsin(
   return groups;
 }
 
+function compareScheduledGroups(
+  left: ScheduledPriceAlertGroup,
+  right: ScheduledPriceAlertGroup
+): number {
+  const leftNeverChecked = left.dueAtMilliseconds === null;
+  const rightNeverChecked = right.dueAtMilliseconds === null;
+
+  if (leftNeverChecked !== rightNeverChecked) {
+    return leftNeverChecked ? -1 : 1;
+  }
+
+  if (
+    left.dueAtMilliseconds !== null &&
+    right.dueAtMilliseconds !== null &&
+    left.dueAtMilliseconds !== right.dueAtMilliseconds
+  ) {
+    return left.dueAtMilliseconds - right.dueAtMilliseconds;
+  }
+
+  return left.exactAsin.localeCompare(right.exactAsin);
+}
+
 function createEmptyReport(): PriceAlertCheckReport {
   return {
     activeAlerts: 0,
@@ -257,6 +305,7 @@ function createEmptyReport(): PriceAlertCheckReport {
     uniqueAsins: 0,
     dueAsins: 0,
     deferredAsins: 0,
+    backgroundDeferredForRunLimit: 0,
     productLookups: 0,
     cacheHits: 0,
     refreshedProducts: 0,
@@ -279,6 +328,9 @@ function createEmptyReport(): PriceAlertCheckReport {
     schedulingFailures: 0,
     lookupFailures: 0,
     unavailablePrices: 0,
+    tokenBudgetStatus: "UNKNOWN",
+    backgroundSkippedForReserve: 0,
+    keepaRateLimited: 0,
   };
 }
 
@@ -475,11 +527,6 @@ export function createPriceAlertCheckRunner(
       (alert) => !hasTargetOutcome(alert)
     );
     const groupedAlerts = groupAlertsByExactAsin(alertsToMonitor);
-    const groups = [...groupedAlerts.entries()];
-    const groupsToProcess =
-      options.maxAsins === undefined
-        ? groups
-        : groups.slice(0, options.maxAsins);
 
     report.activeAlerts = activeAlerts.length;
     report.eligibleAlerts = eligibleAlerts.length;
@@ -488,7 +535,6 @@ export function createPriceAlertCheckRunner(
     report.uniqueAsins = new Set(
       eligibleAlerts.map((alert) => alert.productId)
     ).size;
-    report.deferredAsins = groups.length - groupsToProcess.length;
 
     for (const alert of alertsWithOutcome) {
       const outcome = getStoredOutcome(alert);
@@ -498,7 +544,9 @@ export function createPriceAlertCheckRunner(
       }
     }
 
-    for (const [exactAsin, alerts] of groupsToProcess) {
+    const dueGroups: ScheduledPriceAlertGroup[] = [];
+
+    for (const [exactAsin, alerts] of groupedAlerts) {
       let latestCheck: PriceAlertProductCheck | null;
 
       try {
@@ -523,6 +571,34 @@ export function createPriceAlertCheckRunner(
         continue;
       }
 
+      const requestedAtMilliseconds = latestCheck
+        ? Date.parse(latestCheck.requestedAt)
+        : Number.NaN;
+
+      dueGroups.push({
+        exactAsin,
+        alerts,
+        latestCheck,
+        dueAtMilliseconds: Number.isFinite(requestedAtMilliseconds)
+          ? requestedAtMilliseconds + groupIntervalMs
+          : null,
+      });
+    }
+
+    dueGroups.sort(compareScheduledGroups);
+
+    const groupsToProcess =
+      options.maxAsins === undefined
+        ? dueGroups
+        : dueGroups.slice(0, options.maxAsins);
+
+    report.backgroundDeferredForRunLimit =
+      dueGroups.length - groupsToProcess.length;
+    report.deferredAsins = report.backgroundDeferredForRunLimit;
+
+    for (let groupIndex = 0; groupIndex < groupsToProcess.length; groupIndex += 1) {
+      const { exactAsin, alerts } = groupsToProcess[groupIndex];
+
       report.dueAsins += 1;
       report.productLookups += 1;
 
@@ -530,7 +606,19 @@ export function createPriceAlertCheckRunner(
 
       try {
         product = await dependencies.lookupProduct(exactAsin);
-      } catch {
+      } catch (error) {
+        if (error instanceof PriceAlertMonitoringLookupControlError) {
+          report.tokenBudgetStatus = error.tokenBudgetStatus;
+
+          if (error.reason === "RATE_LIMITED") {
+            report.keepaRateLimited += 1;
+          } else {
+            report.backgroundSkippedForReserve += 1;
+          }
+
+          break;
+        }
+
         report.lookupFailures += 1;
         continue;
       }
@@ -544,6 +632,7 @@ export function createPriceAlertCheckRunner(
         report.cacheHits += 1;
       } else {
         report.refreshedProducts += 1;
+        report.tokenBudgetStatus = product.tokenBudgetStatus;
       }
 
       if (
@@ -636,12 +725,41 @@ const runProductionPriceAlertCheck = createPriceAlertCheckRunner({
       : null;
   },
   async lookupProduct(exactAsin) {
-    const result = await getAffarioProductByAsin(exactAsin);
+    let result: Awaited<ReturnType<typeof getAffarioProductByAsin>>;
+
+    try {
+      result = await getAffarioProductByAsin(exactAsin, {
+        context: "background_alert",
+      });
+    } catch (error) {
+      if (
+        error instanceof KeepaClientError &&
+        error.code === "BACKGROUND_TOKEN_RESERVE"
+      ) {
+        throw new PriceAlertMonitoringLookupControlError(
+          "TOKEN_RESERVE",
+          error.tokenBudgetStatus ?? "UNKNOWN"
+        );
+      }
+
+      if (
+        error instanceof KeepaClientError &&
+        error.code === "OUT_OF_TOKENS"
+      ) {
+        throw new PriceAlertMonitoringLookupControlError(
+          "RATE_LIMITED",
+          "EXHAUSTED"
+        );
+      }
+
+      throw error;
+    }
 
     return {
       exactAsin: result.asin,
       currentPrice: result.buyBox.currentIncludingShippingInEuros,
       cacheHit: result.cacheHit,
+      tokenBudgetStatus: result.tokenBudgetStatus,
     };
   },
   async recordTargetOutcome(alertId, reachedPrice, reachedAt) {
