@@ -6,6 +6,7 @@ import {
   getAffarioPriceAlertOpportunity,
   isActivePriceAlertStatus,
   normalizePriceAlertEmail,
+  PRICE_ALERT_MAX_EMAIL_LENGTH,
   PriceAlertRequestError,
   requestAffarioPriceAlertOnce,
   resolveTrustedAffarioPriceAlert,
@@ -116,6 +117,12 @@ test("normalizza un'email valida e rifiuta email non valide", () => {
   assert.equal(normalizePriceAlertEmail("utente@"), null);
   assert.equal(normalizePriceAlertEmail("utente example.it"), null);
   assert.equal(normalizePriceAlertEmail(null), null);
+  assert.equal(
+    normalizePriceAlertEmail(
+      `${"a".repeat(PRICE_ALERT_MAX_EMAIL_LENGTH)}@example.it`
+    ),
+    null
+  );
 });
 
 test("preserva l'exact ASIN e non invia alcun target modificabile", async () => {

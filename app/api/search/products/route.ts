@@ -4,6 +4,7 @@ import {
   AffarioProductSearchInputError,
   type AffarioProductSearchInputErrorCode,
 } from "@/lib/affarioProductSearch";
+import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
 import {
   AffarioProductSearchServiceError,
 } from "@/services/affarioProductSearch";
@@ -41,9 +42,12 @@ function errorResponse(
     { error: { code, message } },
     {
       status,
-      ...(retryAfterSeconds === undefined
-        ? {}
-        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+      headers: {
+        ...API_NO_STORE_HEADERS,
+        ...(retryAfterSeconds === undefined
+          ? {}
+          : { "Retry-After": String(retryAfterSeconds) }),
+      },
     }
   );
 }
@@ -102,7 +106,10 @@ export async function GET(
   try {
     const { data } = await searchAffarioProductsWithFallback(query);
 
-    return NextResponse.json({ data });
+    return NextResponse.json(
+      { data },
+      { headers: API_NO_STORE_HEADERS }
+    );
   } catch (error) {
     return mapError(error);
   }

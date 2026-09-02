@@ -12,6 +12,11 @@ import {
   generateAlertManagementToken,
   hashAlertManagementToken,
 } from "@/lib/alertManagementToken";
+import {
+  API_NO_STORE_HEADERS,
+  JsonRequestBodyError,
+  readJsonRequestBody,
+} from "@/lib/jsonRequestBody";
 import { preparePendingPriceAlertResend } from "@/lib/pendingPriceAlertResend";
 import { buildAffarioProductAdvice } from "@/services/affarioProductAdvice";
 import {
@@ -45,9 +50,12 @@ function errorResponse(
     { error: { code, message } },
     {
       status,
-      ...(retryAfterSeconds === undefined
-        ? {}
-        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+      headers: {
+        ...API_NO_STORE_HEADERS,
+        ...(retryAfterSeconds === undefined
+          ? {}
+          : { "Retry-After": String(retryAfterSeconds) }),
+      },
     }
   );
 }
@@ -80,9 +88,14 @@ function alertAlreadyExistsResponse(
       alertStatus,
       ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
     },
-    retryAfterSeconds === undefined
-      ? undefined
-      : { headers: { "Retry-After": String(retryAfterSeconds) } }
+    {
+      headers: {
+        ...API_NO_STORE_HEADERS,
+        ...(retryAfterSeconds === undefined
+          ? {}
+          : { "Retry-After": String(retryAfterSeconds) }),
+      },
+    }
   );
 }
 
@@ -99,8 +112,19 @@ export async function POST(request: Request) {
   let body: unknown;
 
   try {
-    body = await request.json();
-  } catch {
+    body = await readJsonRequestBody(request);
+  } catch (error) {
+    if (
+      error instanceof JsonRequestBodyError &&
+      error.code === "PAYLOAD_TOO_LARGE"
+    ) {
+      return errorResponse(
+        "INVALID_ALERT",
+        "I dati dell'alert non sono validi.",
+        413
+      );
+    }
+
     return invalidAlertResponse();
   }
 
@@ -319,6 +343,9 @@ export async function POST(request: Request) {
       confirmationEmailSent,
       alertStatus: PRICE_ALERT_PENDING_STATUS,
     },
-    { status: alreadyExists ? 200 : 201 }
+    {
+      status: alreadyExists ? 200 : 201,
+      headers: API_NO_STORE_HEADERS,
+    }
   );
 }

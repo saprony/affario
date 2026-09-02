@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
 import {
   AffarioProductLookupError,
   getAffarioProductByAsin,
@@ -77,9 +78,12 @@ function errorResponse(
     { error: { code, message } },
     {
       status,
-      ...(retryAfterSeconds === undefined
-        ? {}
-        : { headers: { "Retry-After": String(retryAfterSeconds) } }),
+      headers: {
+        ...API_NO_STORE_HEADERS,
+        ...(retryAfterSeconds === undefined
+          ? {}
+          : { "Retry-After": String(retryAfterSeconds) }),
+      },
     }
   );
 }
@@ -168,40 +172,43 @@ export async function GET(
     const currentPrice = result.buyBox.currentIncludingShippingInEuros;
     const advice = buildAffarioProductAdvice(result);
 
-    return NextResponse.json({
-      data: {
-        asin: result.asin,
-        title: result.product.title,
-        brand: result.product.brand,
-        model: result.product.model,
-        imageUrl: result.product.imageUrl,
-        color: result.product.color,
-        size: result.product.size,
-        parentAsin: result.product.parentAsin,
-        buyBox: {
-          status: currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
-          currentPrice,
-          price: result.buyBox.priceInEuros,
-          shipping: result.buyBox.shippingInEuros,
-          total: result.buyBox.totalInEuros,
-          currency: result.currency,
-          availabilityMessage: result.buyBox.availabilityMessage,
-          isAmazon: result.buyBox.isAmazon,
-          isFBA: result.buyBox.isFBA,
-          isPrimeEligible: result.buyBox.isPrimeEligible,
+    return NextResponse.json(
+      {
+        data: {
+          asin: result.asin,
+          title: result.product.title,
+          brand: result.product.brand,
+          model: result.product.model,
+          imageUrl: result.product.imageUrl,
+          color: result.product.color,
+          size: result.product.size,
+          parentAsin: result.product.parentAsin,
+          buyBox: {
+            status: currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
+            currentPrice,
+            price: result.buyBox.priceInEuros,
+            shipping: result.buyBox.shippingInEuros,
+            total: result.buyBox.totalInEuros,
+            currency: result.currency,
+            availabilityMessage: result.buyBox.availabilityMessage,
+            isAmazon: result.buyBox.isAmazon,
+            isFBA: result.buyBox.isFBA,
+            isPrimeEligible: result.buyBox.isPrimeEligible,
+          },
+          lastBuyBoxUpdate: result.lastBuyBoxUpdate,
+          priceHistory90Days: {
+            averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
+            minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
+            minimumBuyBoxPriceAt: result.buyBox90Days.minimumObservedAt,
+            currency: result.currency,
+          },
+          advice,
+          savingsPotential:
+            result.potentialSavingsAnalysis.savingsPotential,
         },
-        lastBuyBoxUpdate: result.lastBuyBoxUpdate,
-        priceHistory90Days: {
-          averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
-          minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
-          minimumBuyBoxPriceAt: result.buyBox90Days.minimumObservedAt,
-          currency: result.currency,
-        },
-        advice,
-        savingsPotential:
-          result.potentialSavingsAnalysis.savingsPotential,
       },
-    });
+      { headers: API_NO_STORE_HEADERS }
+    );
   } catch (error) {
     return mapError(error);
   }

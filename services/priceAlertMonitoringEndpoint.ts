@@ -8,6 +8,7 @@ import type {
 } from "@/services/priceAlertMonitoringEngine";
 
 export const DEFAULT_ALERT_MONITORING_MAX_ASINS_PER_RUN = 5;
+export const MIN_ALERT_MONITORING_CRON_SECRET_BYTES = 32;
 
 type PriceAlertMonitoringRunner = (
   options?: PriceAlertCheckOptions
@@ -62,7 +63,12 @@ function hasValidBearerSecret(
   authorizationHeader: string | null,
   configuredSecret: string | undefined
 ): boolean {
-  if (!configuredSecret || !authorizationHeader) {
+  if (
+    !configuredSecret ||
+    new TextEncoder().encode(configuredSecret).byteLength <
+      MIN_ALERT_MONITORING_CRON_SECRET_BYTES ||
+    !authorizationHeader
+  ) {
     return false;
   }
 

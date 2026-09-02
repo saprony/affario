@@ -4,6 +4,8 @@ import type { AffarioSavingsPotential } from "../types/productAnalysis";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EXACT_ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
+export const PRICE_ALERT_MAX_EMAIL_LENGTH = 254;
+
 export const PRICE_ALERT_PENDING_STATUS = "pending_confirmation" as const;
 export const PRICE_ALERT_ACTIVE_STATUS = "active" as const;
 export const PRICE_ALERT_NOTIFYING_TARGET_STATUS =
@@ -152,7 +154,10 @@ export function normalizePriceAlertEmail(value: unknown): string | null {
 
   const normalizedEmail = value.trim().toLowerCase();
 
-  return EMAIL_PATTERN.test(normalizedEmail) ? normalizedEmail : null;
+  return normalizedEmail.length <= PRICE_ALERT_MAX_EMAIL_LENGTH &&
+    EMAIL_PATTERN.test(normalizedEmail)
+    ? normalizedEmail
+    : null;
 }
 
 export function isPriceAlertPersistenceStatus(

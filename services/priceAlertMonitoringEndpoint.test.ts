@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createPriceAlertMonitoringEndpoint,
   DEFAULT_ALERT_MONITORING_MAX_ASINS_PER_RUN,
+  MIN_ALERT_MONITORING_CRON_SECRET_BYTES,
 } from "./priceAlertMonitoringEndpoint";
 import type {
   PriceAlertCheckOptions,
@@ -138,6 +139,21 @@ test("secret server assente rende l'endpoint non eseguibile", async () => {
 
   assert.equal(response.status, 401);
   assert.equal(harness.calls, 0);
+});
+
+test("secret server troppo corto rende l'endpoint non eseguibile", async () => {
+  const weakSecret = "x".repeat(
+    MIN_ALERT_MONITORING_CRON_SECRET_BYTES - 1
+  );
+  const harness = createHarness({
+    cronSecret: weakSecret,
+    enabled: "true",
+  });
+  const response = await harness.endpoint.POST(createRequest(weakSecret));
+
+  assert.equal(response.status, 401);
+  assert.equal(harness.calls, 0);
+  assertNoCache(response);
 });
 
 test("secret corretto e kill switch non true non leggono servizi", async () => {

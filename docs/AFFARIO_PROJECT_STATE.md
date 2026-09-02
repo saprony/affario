@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 29 agosto 2026.
+Ultimo aggiornamento: 2 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -522,6 +522,25 @@ Conseguenze:
 - Eseguire controllo segreti prima di ogni push.
 - Non esporre raw Keepa, query SQL/PostgREST, stack trace o dettagli infrastrutturali nelle API pubbliche.
 - Sicurezza e hardening sono obbligatori prima del go-live reale.
+
+### 12.1 Production environment checklist
+
+| Variabile | Ruolo |
+|---|---|
+| `NODE_ENV` | Selezione della modalità runtime e dell'esperienza pubblica Production. |
+| `PRIVACY_CONTACT_EMAIL` | Contatto mostrato nell'informativa Privacy, validato server-side. |
+| `SUPABASE_URL` | Endpoint server-side del progetto Supabase. |
+| `SUPABASE_SECRET_KEY` | Credenziale server-only per storage, catalogo e alert. |
+| `BREVO_API_KEY` | Credenziale server-only per le email transazionali degli alert. |
+| `KEEPA_API_KEY` | Credenziale server-only per ricerca, lookup e storico Keepa. |
+| `ALERT_MONITORING_CRON_SECRET` | Bearer secret dedicato all'endpoint interno di monitoraggio. |
+| `ALERT_MONITORING_ENABLED` | Kill switch fail-closed del monitoraggio automatico. |
+| `ALERT_MONITORING_MAX_ASINS_PER_RUN` | Limite prudente degli exact ASIN elaborati in un run. |
+| `KEEPA_BACKGROUND_TOKEN_RESERVE` | Riserva Keepa conservata per il traffico interattivo. |
+
+`PRIVACY_CONTACT_EMAIL` è configurata in Production e il deployment Vercel
+dell'ultimo `master` è tornato verde (`Ready`). Nessun indirizzo personale è registrato
+nel repository.
 
 ## 13. Necessario prima del go-live
 

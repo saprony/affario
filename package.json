@@ -2,6 +2,9 @@
   "name": "affario",
   "version": "0.1.0",
   "private": true,
+  "allowScripts": {
+    "unrs-resolver@1.12.2": true
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,7 +13,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
-    "next": "16.2.9",
+    "next": "16.3.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -20,7 +23,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
