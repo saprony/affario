@@ -8,6 +8,7 @@ import {
   resolveTrustedAffarioPriceAlert,
   type PriceAlertPersistenceStatus,
 } from "@/lib/affarioPriceAlert";
+import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import {
   generateAlertManagementToken,
   hashAlertManagementToken,
@@ -18,6 +19,10 @@ import {
   readJsonRequestBody,
 } from "@/lib/jsonRequestBody";
 import { preparePendingPriceAlertResend } from "@/lib/pendingPriceAlertResend";
+import {
+  ABUSE_RATE_LIMIT_POLICIES,
+  executeWithAbuseRateLimits,
+} from "@/services/abuseRateLimit";
 import { buildAffarioProductAdvice } from "@/services/affarioProductAdvice";
 import {
   AffarioProductLookupError,
@@ -146,6 +151,33 @@ export async function POST(request: Request) {
     return invalidAlertResponse();
   }
 
+  const execution = await executeWithAbuseRateLimits(
+    request,
+    [
+      {
+        policy: ABUSE_RATE_LIMIT_POLICIES.ALERT_CLIENT,
+        subject: { domain: "client" },
+      },
+      {
+        policy: ABUSE_RATE_LIMIT_POLICIES.ALERT_EMAIL,
+        subject: { domain: "email", value: normalizedEmail },
+      },
+    ],
+    () => createPriceAlert(request, exactAsin, normalizedEmail)
+  );
+
+  if (execution.status !== "completed") {
+    return createAbuseRateLimitFailureResponse(execution);
+  }
+
+  return execution.value;
+}
+
+async function createPriceAlert(
+  request: Request,
+  exactAsin: string,
+  normalizedEmail: string
+) {
   let trustedAlert;
 
   try {

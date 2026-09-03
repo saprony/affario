@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import {
   hashAlertManagementToken,
   isValidAlertManagementToken,
@@ -10,6 +11,10 @@ import {
   readJsonRequestBody,
 } from "@/lib/jsonRequestBody";
 import { confirmPriceAlertByToken } from "@/lib/priceAlertManagement";
+import {
+  ABUSE_RATE_LIMIT_POLICIES,
+  executeWithAbuseRateLimits,
+} from "@/services/abuseRateLimit";
 import { priceAlertManagementStore } from "@/services/priceAlertManagementStore";
 
 function alertNotFoundResponse() {
@@ -51,15 +56,39 @@ export async function POST(request: Request) {
 
   const { token } = body as Record<string, unknown>;
 
+  if (!isValidAlertManagementToken(token)) {
+    return alertNotFoundResponse();
+  }
+
   try {
-    const result = await confirmPriceAlertByToken(
-      token,
-      {
-        isValid: isValidAlertManagementToken,
-        hash: hashAlertManagementToken,
-      },
-      priceAlertManagementStore
+    const execution = await executeWithAbuseRateLimits(
+      request,
+      [
+        {
+          policy: ABUSE_RATE_LIMIT_POLICIES.MANAGEMENT_CLIENT,
+          subject: { domain: "client" },
+        },
+        {
+          policy: ABUSE_RATE_LIMIT_POLICIES.MANAGEMENT_TOKEN,
+          subject: { domain: "token", value: token },
+        },
+      ],
+      () =>
+        confirmPriceAlertByToken(
+          token,
+          {
+            isValid: isValidAlertManagementToken,
+            hash: hashAlertManagementToken,
+          },
+          priceAlertManagementStore
+        )
     );
+
+    if (execution.status !== "completed") {
+      return createAbuseRateLimitFailureResponse(execution);
+    }
+
+    const result = execution.value;
 
     if (result.status === "not-found") {
       return alertNotFoundResponse();

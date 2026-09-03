@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import {
   hashAlertManagementToken,
   isValidAlertManagementToken,
@@ -8,6 +9,10 @@ import {
   JsonRequestBodyError,
   readJsonRequestBody,
 } from "@/lib/jsonRequestBody";
+import {
+  ABUSE_RATE_LIMIT_POLICIES,
+  executeWithAbuseRateLimits,
+} from "@/services/abuseRateLimit";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
 
 const ALERT_NOT_FOUND_MESSAGE = "Alert non trovato o già eliminato.";
@@ -55,29 +60,50 @@ export async function DELETE(request: Request) {
     return alertNotFoundResponse();
   }
 
-  const tokenHash = hashAlertManagementToken(token);
+  const execution = await executeWithAbuseRateLimits(
+    request,
+    [
+      {
+        policy: ABUSE_RATE_LIMIT_POLICIES.MANAGEMENT_CLIENT,
+        subject: { domain: "client" },
+      },
+      {
+        policy: ABUSE_RATE_LIMIT_POLICIES.MANAGEMENT_TOKEN,
+        subject: { domain: "token", value: token },
+      },
+    ],
+    async () => {
+      const tokenHash = hashAlertManagementToken(token);
 
-  try {
-    const supabase = getSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("price_alerts")
-      .delete()
-      .eq("manage_token_hash", tokenHash)
-      .select("manage_token_hash");
+      try {
+        const supabase = getSupabaseServerClient();
+        const { data, error } = await supabase
+          .from("price_alerts")
+          .delete()
+          .eq("manage_token_hash", tokenHash)
+          .select("manage_token_hash");
 
-    if (error) {
-      return deleteErrorResponse();
+        if (error) {
+          return deleteErrorResponse();
+        }
+
+        if (!data || data.length === 0) {
+          return alertNotFoundResponse();
+        }
+      } catch {
+        return deleteErrorResponse();
+      }
+
+      return NextResponse.json(
+        { message: "Alert eliminato correttamente." },
+        { headers: API_NO_STORE_HEADERS }
+      );
     }
+  );
 
-    if (!data || data.length === 0) {
-      return alertNotFoundResponse();
-    }
-  } catch {
-    return deleteErrorResponse();
+  if (execution.status !== "completed") {
+    return createAbuseRateLimitFailureResponse(execution);
   }
 
-  return NextResponse.json(
-    { message: "Alert eliminato correttamente." },
-    { headers: API_NO_STORE_HEADERS }
-  );
+  return execution.value;
 }

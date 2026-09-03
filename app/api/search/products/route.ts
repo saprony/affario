@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 
 import {
   AffarioProductSearchInputError,
+  prepareAffarioProductSearchQuery,
   type AffarioProductSearchInputErrorCode,
 } from "@/lib/affarioProductSearch";
+import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
+import {
+  ABUSE_RATE_LIMIT_POLICIES,
+  executeWithAbuseRateLimits,
+} from "@/services/abuseRateLimit";
 import {
   AffarioProductSearchServiceError,
 } from "@/services/affarioProductSearch";
@@ -93,24 +99,40 @@ function mapError(
   );
 }
 
-export async function GET(
-  request: Request
-): Promise<
-  NextResponse<
-    | AffarioProductSearchApiSuccessResponse
-    | AffarioProductSearchApiErrorResponse
-  >
-> {
+export async function GET(request: Request) {
   const query = new URL(request.url).searchParams.get("q") ?? "";
 
   try {
-    const { data } = await searchAffarioProductsWithFallback(query);
-
-    return NextResponse.json(
-      { data },
-      { headers: API_NO_STORE_HEADERS }
-    );
+    prepareAffarioProductSearchQuery(query);
   } catch (error) {
     return mapError(error);
   }
+
+  const execution = await executeWithAbuseRateLimits(
+    request,
+    [
+      {
+        policy: ABUSE_RATE_LIMIT_POLICIES.SEARCH_CLIENT,
+        subject: { domain: "client" },
+      },
+    ],
+    async () => {
+      try {
+        const { data } = await searchAffarioProductsWithFallback(query);
+
+        return NextResponse.json(
+          { data },
+          { headers: API_NO_STORE_HEADERS }
+        );
+      } catch (error) {
+        return mapError(error);
+      }
+    }
+  );
+
+  if (execution.status !== "completed") {
+    return createAbuseRateLimitFailureResponse(execution);
+  }
+
+  return execution.value;
 }

@@ -531,6 +531,7 @@ Conseguenze:
 | `PRIVACY_CONTACT_EMAIL` | Contatto mostrato nell'informativa Privacy, validato server-side. |
 | `SUPABASE_URL` | Endpoint server-side del progetto Supabase. |
 | `SUPABASE_SECRET_KEY` | Credenziale server-only per storage, catalogo e alert. |
+| `ABUSE_RATE_LIMIT_HMAC_SECRET` | Secret server-only dedicato alla pseudonimizzazione HMAC degli identificatori anti-abuso. |
 | `BREVO_API_KEY` | Credenziale server-only per le email transazionali degli alert. |
 | `KEEPA_API_KEY` | Credenziale server-only per ricerca, lookup e storico Keepa. |
 | `ALERT_MONITORING_CRON_SECRET` | Bearer secret dedicato all'endpoint interno di monitoraggio. |
@@ -541,6 +542,40 @@ Conseguenze:
 `PRIVACY_CONTACT_EMAIL` è configurata in Production e il deployment Vercel
 dell'ultimo `master` è tornato verde (`Ready`). Nessun indirizzo personale è registrato
 nel repository.
+
+### 12.2 FUNZIONE 046B1 COMPLETATA
+
+- Le API pubbliche usano un rate limiting fixed-window condiviso tramite
+  Postgres, con una sola riga aggregata per `scope + subject_hash` e consumo
+  multi-quota atomico tramite una sola RPC `SECURITY INVOKER` per richiesta
+  HTTP; tutte le quote del batch vengono consumate, `allowed` richiede che
+  siano tutte entro soglia e un diniego usa il massimo `Retry-After` necessario.
+- IP client, email normalizzata e token management vengono trasformati
+  immediatamente con HMAC-SHA256 e domini distinti; la tabella anti-abuso non
+  conserva IP, email, token o altri payload raw.
+- Le policy V1 sono: ricerca 20/5 minuti per client, prodotto 30/10 minuti per
+  client, creazione alert 10/60 minuti per client e 5/60 minuti per email,
+  conferma/gestione 20/5 minuti per client e 10/5 minuti per token.
+- Un rate limit superato restituisce `429` con `Retry-After`; secret HMAC,
+  identità client o store non disponibili producono `503` fail-closed prima di
+  lookup, Keepa, scritture alert o Brevo.
+- L'audit SQL remoto read-only di `public.price_alerts` è completato: owner
+  `postgres`, RLS attiva senza FORCE RLS, zero policy, zero trigger, zero view
+  dipendenti e zero funzioni rilevanti. `PUBLIC` non ha privilegi, mentre
+  le ACL inizialmente ampie di `anon`, `authenticated` e `service_role` sono
+  state ristrette dalla migration B1 senza modificare dati, colonne o indici:
+  accesso diretto rimosso a `anon`/`authenticated` e soli privilegi
+  `SELECT`, `INSERT`, `UPDATE`, `DELETE` a `service_role`.
+- Default privileges dello schema public risultano permissive per
+  anon/authenticated su future tables/sequences/functions. Richiede
+  audit/hardening dedicato prima del go-live; non modificato in 046B1 per
+  evitare regressioni globali Supabase.
+- Le due migration B1 sono applicate e allineate nella history remota: stato/RPC
+  del rate limiter e hardening RLS/privilegi di `price_alerts`. Il dry-run
+  successivo è pulito, le 6 righe alert sono invariate e la tabella anti-abuso
+  parte vuota.
+- Mutex del monitoring e lock refresh exact ASIN/cache stampede restano fuori
+  scope e sono rinviati alla FUNZIONE 046B2.
 
 ## 13. Necessario prima del go-live
 
@@ -600,8 +635,8 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **045**, validata tecnicamente e con migration
+- Ultima funzione completata: **046B1**, validata tecnicamente e con migration
   remote applicate; cron installato ma inattivo.
-- Funzione successiva: **non avviata**.
+- Funzione successiva: **046B2**, non iniziata.
 
 `PublicHome`, deploy e funzioni successive restano invariati.

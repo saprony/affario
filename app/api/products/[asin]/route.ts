@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
+import {
+  ABUSE_RATE_LIMIT_POLICIES,
+  executeWithAbuseRateLimits,
+} from "@/services/abuseRateLimit";
 import {
   AffarioProductLookupError,
   getAffarioProductByAsin,
@@ -153,11 +158,9 @@ function mapError(error: unknown): NextResponse<AffarioProductApiErrorResponse> 
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: ProductRouteContext
-): Promise<
-  NextResponse<AffarioProductApiResponse | AffarioProductApiErrorResponse>
-> {
+) {
   const { asin } = await context.params;
   let normalizedAsin: string;
 
@@ -167,49 +170,69 @@ export async function GET(
     return mapError(error);
   }
 
-  try {
-    const result = await getAffarioProductByAsin(normalizedAsin);
-    const currentPrice = result.buyBox.currentIncludingShippingInEuros;
-    const advice = buildAffarioProductAdvice(result);
-
-    return NextResponse.json(
+  const execution = await executeWithAbuseRateLimits(
+    request,
+    [
       {
-        data: {
-          asin: result.asin,
-          title: result.product.title,
-          brand: result.product.brand,
-          model: result.product.model,
-          imageUrl: result.product.imageUrl,
-          color: result.product.color,
-          size: result.product.size,
-          parentAsin: result.product.parentAsin,
-          buyBox: {
-            status: currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
-            currentPrice,
-            price: result.buyBox.priceInEuros,
-            shipping: result.buyBox.shippingInEuros,
-            total: result.buyBox.totalInEuros,
-            currency: result.currency,
-            availabilityMessage: result.buyBox.availabilityMessage,
-            isAmazon: result.buyBox.isAmazon,
-            isFBA: result.buyBox.isFBA,
-            isPrimeEligible: result.buyBox.isPrimeEligible,
-          },
-          lastBuyBoxUpdate: result.lastBuyBoxUpdate,
-          priceHistory90Days: {
-            averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
-            minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
-            minimumBuyBoxPriceAt: result.buyBox90Days.minimumObservedAt,
-            currency: result.currency,
-          },
-          advice,
-          savingsPotential:
-            result.potentialSavingsAnalysis.savingsPotential,
-        },
+        policy: ABUSE_RATE_LIMIT_POLICIES.PRODUCT_CLIENT,
+        subject: { domain: "client" },
       },
-      { headers: API_NO_STORE_HEADERS }
-    );
-  } catch (error) {
-    return mapError(error);
+    ],
+    async () => {
+      try {
+        const result = await getAffarioProductByAsin(normalizedAsin);
+        const currentPrice =
+          result.buyBox.currentIncludingShippingInEuros;
+        const advice = buildAffarioProductAdvice(result);
+
+        return NextResponse.json(
+          {
+            data: {
+              asin: result.asin,
+              title: result.product.title,
+              brand: result.product.brand,
+              model: result.product.model,
+              imageUrl: result.product.imageUrl,
+              color: result.product.color,
+              size: result.product.size,
+              parentAsin: result.product.parentAsin,
+              buyBox: {
+                status:
+                  currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
+                currentPrice,
+                price: result.buyBox.priceInEuros,
+                shipping: result.buyBox.shippingInEuros,
+                total: result.buyBox.totalInEuros,
+                currency: result.currency,
+                availabilityMessage: result.buyBox.availabilityMessage,
+                isAmazon: result.buyBox.isAmazon,
+                isFBA: result.buyBox.isFBA,
+                isPrimeEligible: result.buyBox.isPrimeEligible,
+              },
+              lastBuyBoxUpdate: result.lastBuyBoxUpdate,
+              priceHistory90Days: {
+                averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
+                minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
+                minimumBuyBoxPriceAt:
+                  result.buyBox90Days.minimumObservedAt,
+                currency: result.currency,
+              },
+              advice,
+              savingsPotential:
+                result.potentialSavingsAnalysis.savingsPotential,
+            },
+          },
+          { headers: API_NO_STORE_HEADERS }
+        );
+      } catch (error) {
+        return mapError(error);
+      }
+    }
+  );
+
+  if (execution.status !== "completed") {
+    return createAbuseRateLimitFailureResponse(execution);
   }
+
+  return execution.value;
 }
