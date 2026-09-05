@@ -12,7 +12,10 @@ import {
   getPriceAlertGroupIntervalMs,
   isPriceAlertGroupDue,
 } from "@/lib/priceAlertMonitoring";
-import { getAffarioProductByAsin } from "@/services/affarioProductLookup";
+import {
+  AffarioProductLookupError,
+  getAffarioProductByAsin,
+} from "@/services/affarioProductLookup";
 import {
   KeepaClientError,
   type KeepaTokenBudgetStatus,
@@ -35,6 +38,7 @@ import {
 } from "@/services/priceAlertMonitoringStore";
 
 export const TARGET_NOTIFICATION_CLAIM_LEASE_MS = 60 * 60 * 1_000;
+export const MAX_ALERT_MONITORING_ASINS_PER_RUN = 10;
 
 export type PriceAlertMonitoringRecord = {
   id: number;
@@ -64,7 +68,10 @@ export type PriceAlertProductLookup = {
 
 export class PriceAlertMonitoringLookupControlError extends Error {
   constructor(
-    public readonly reason: "TOKEN_RESERVE" | "RATE_LIMITED",
+    public readonly reason:
+      | "TOKEN_RESERVE"
+      | "RATE_LIMITED"
+      | "REFRESH_CONTENDED",
     public readonly tokenBudgetStatus: KeepaTokenBudgetStatus
   ) {
     super("Price alert product lookup was stopped by provider capacity.");
@@ -165,6 +172,7 @@ export type PriceAlertCheckReport = {
   tokenBudgetStatus: KeepaTokenBudgetStatus;
   backgroundSkippedForReserve: number;
   keepaRateLimited: number;
+  productRefreshLockContended: number;
 };
 
 type EligiblePriceAlert = PriceAlertMonitoringRecord & {
@@ -331,6 +339,7 @@ function createEmptyReport(): PriceAlertCheckReport {
     tokenBudgetStatus: "UNKNOWN",
     backgroundSkippedForReserve: 0,
     keepaRateLimited: 0,
+    productRefreshLockContended: 0,
   };
 }
 
@@ -587,10 +596,11 @@ export function createPriceAlertCheckRunner(
 
     dueGroups.sort(compareScheduledGroups);
 
-    const groupsToProcess =
-      options.maxAsins === undefined
-        ? dueGroups
-        : dueGroups.slice(0, options.maxAsins);
+    const effectiveMaxAsins = Math.min(
+      options.maxAsins ?? MAX_ALERT_MONITORING_ASINS_PER_RUN,
+      MAX_ALERT_MONITORING_ASINS_PER_RUN
+    );
+    const groupsToProcess = dueGroups.slice(0, effectiveMaxAsins);
 
     report.backgroundDeferredForRunLimit =
       dueGroups.length - groupsToProcess.length;
@@ -609,6 +619,11 @@ export function createPriceAlertCheckRunner(
       } catch (error) {
         if (error instanceof PriceAlertMonitoringLookupControlError) {
           report.tokenBudgetStatus = error.tokenBudgetStatus;
+
+          if (error.reason === "REFRESH_CONTENDED") {
+            report.productRefreshLockContended += 1;
+            continue;
+          }
 
           if (error.reason === "RATE_LIMITED") {
             report.keepaRateLimited += 1;
@@ -749,6 +764,16 @@ const runProductionPriceAlertCheck = createPriceAlertCheckRunner({
         throw new PriceAlertMonitoringLookupControlError(
           "RATE_LIMITED",
           "EXHAUSTED"
+        );
+      }
+
+      if (
+        error instanceof AffarioProductLookupError &&
+        error.code === "REFRESH_IN_PROGRESS"
+      ) {
+        throw new PriceAlertMonitoringLookupControlError(
+          "REFRESH_CONTENDED",
+          "UNKNOWN"
         );
       }
 

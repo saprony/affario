@@ -18,6 +18,7 @@ const ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
 export const KEEPA_PRODUCT_REQUEST_ESTIMATED_TOKENS = 3;
 export const KEEPA_SEARCH_REQUEST_ESTIMATED_TOKENS = 10;
+export const KEEPA_HTTP_TIMEOUT_MS = 30_000;
 
 export type { KeepaRequestContext, KeepaTokenBudgetStatus };
 
@@ -920,6 +921,7 @@ export function createKeepaHttpRequester(
         method: "GET",
         headers: { Accept: "application/json" },
         cache: "no-store",
+        signal: AbortSignal.timeout(KEEPA_HTTP_TIMEOUT_MS),
       });
     } catch {
       await releaseBackgroundLeaseQuietly(acquisition.leaseStartedAt);

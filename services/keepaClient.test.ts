@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createKeepaHttpRequester,
+  KEEPA_HTTP_TIMEOUT_MS,
   KeepaClientError,
   parseKeepaRuntimeObservation,
   type KeepaHttpRequesterDependencies,
@@ -36,13 +37,15 @@ function createHarness(input: {
 }) {
   let requestCalls = 0;
   let acquireCalls = 0;
+  const requestInits: RequestInit[] = [];
   const recorded: Array<
     Parameters<KeepaHttpRequesterDependencies["recordObservation"]>[0]
   > = [];
   const released: string[] = [];
   const requester = createKeepaHttpRequester({
-    async request() {
+    async request(_input, init) {
       requestCalls += 1;
+      requestInits.push(init);
       return input.response();
     },
     async acquireBackgroundRequest(estimatedTokenCost, now) {
@@ -72,6 +75,7 @@ function createHarness(input: {
     requester,
     recorded,
     released,
+    requestInits,
     get acquireCalls() {
       return acquireCalls;
     },
@@ -110,6 +114,23 @@ test("una response 200 registra passivamente tutta la telemetria", async () => {
       backgroundLeaseStartedAt: null,
     },
   ]);
+});
+
+test("ogni HTTP Keepa ha un timeout bounded di 30 secondi", async () => {
+  const harness = createHarness({
+    response: async () => Response.json(bucketPayload()),
+  });
+
+  await harness.requester(REQUEST_URL, {
+    context: "interactive",
+    estimatedTokenCost: 3,
+  });
+
+  const signal = harness.requestInits[0]?.signal;
+
+  assert.equal(KEEPA_HTTP_TIMEOUT_MS, 30_000);
+  assert.ok(signal instanceof AbortSignal);
+  assert.equal(signal.aborted, false);
 });
 
 test("failure telemetria non rompe una response interactive valida", async () => {

@@ -2,13 +2,23 @@ import "server-only";
 
 import { createHash, timingSafeEqual } from "node:crypto";
 
-import type {
-  PriceAlertCheckOptions,
-  PriceAlertCheckReport,
+import {
+  MAX_ALERT_MONITORING_ASINS_PER_RUN,
+  type PriceAlertCheckOptions,
+  type PriceAlertCheckReport,
 } from "@/services/priceAlertMonitoringEngine";
+import type {
+  DistributedLease,
+  DistributedLeaseClaimResult,
+} from "@/services/distributedLease";
 
 export const DEFAULT_ALERT_MONITORING_MAX_ASINS_PER_RUN = 5;
+export { MAX_ALERT_MONITORING_ASINS_PER_RUN };
 export const MIN_ALERT_MONITORING_CRON_SECRET_BYTES = 32;
+export const PRICE_ALERT_MONITORING_LEASE_SECONDS = 360;
+export const PRICE_ALERT_MONITORING_RESOURCE_TYPE = "monitoring_run";
+export const PRICE_ALERT_MONITORING_RESOURCE_KEY =
+  "price-alert-monitoring";
 
 type PriceAlertMonitoringRunner = (
   options?: PriceAlertCheckOptions
@@ -23,6 +33,8 @@ type PriceAlertMonitoringEnvironment = {
 type PriceAlertMonitoringEndpointDependencies = {
   runMonitoring: PriceAlertMonitoringRunner;
   getEnvironment: () => PriceAlertMonitoringEnvironment;
+  tryClaimMonitoringLease: () => Promise<DistributedLeaseClaimResult>;
+  releaseMonitoringLease: (lease: DistributedLease) => Promise<boolean>;
 };
 
 type SanitizedPriceAlertMonitoringReport = Pick<
@@ -40,6 +52,7 @@ type SanitizedPriceAlertMonitoringReport = Pick<
   | "tokenBudgetStatus"
   | "backgroundSkippedForReserve"
   | "keepaRateLimited"
+  | "productRefreshLockContended"
 >;
 
 const RESPONSE_HEADERS = {
@@ -95,7 +108,9 @@ function parseMaxAsinsPerRun(value: string | undefined): number | null {
 
   const parsed = Number(value);
 
-  return Number.isSafeInteger(parsed) ? parsed : null;
+  return Number.isSafeInteger(parsed)
+    ? Math.min(parsed, MAX_ALERT_MONITORING_ASINS_PER_RUN)
+    : null;
 }
 
 function sanitizeReport(
@@ -116,6 +131,8 @@ function sanitizeReport(
     tokenBudgetStatus: report.tokenBudgetStatus,
     backgroundSkippedForReserve: report.backgroundSkippedForReserve,
     keepaRateLimited: report.keepaRateLimited,
+    productRefreshLockContended:
+      report.productRefreshLockContended,
   };
 }
 
@@ -173,6 +190,29 @@ export function createPriceAlertMonitoringEndpoint(
         );
       }
 
+      let monitoringClaim: DistributedLeaseClaimResult;
+
+      try {
+        monitoringClaim = await dependencies.tryClaimMonitoringLease();
+      } catch {
+        return jsonResponse(
+          {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Monitoring is not available.",
+            },
+          },
+          503
+        );
+      }
+
+      if (monitoringClaim.status === "contended") {
+        return jsonResponse({
+          status: "skipped",
+          report: { monitoringRunSkippedAlreadyRunning: true },
+        });
+      }
+
       try {
         const report = await dependencies.runMonitoring({ maxAsins });
 
@@ -190,6 +230,14 @@ export function createPriceAlertMonitoringEndpoint(
           },
           500
         );
+      } finally {
+        try {
+          await dependencies.releaseMonitoringLease(
+            monitoringClaim.lease
+          );
+        } catch {
+          // The lease expires after the function execution safety margin.
+        }
       }
     },
   };

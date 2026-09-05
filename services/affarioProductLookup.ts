@@ -18,6 +18,10 @@ import {
   type KeepaTokenBudgetStatus,
   type KeepaUsage,
 } from "@/services/keepaClient";
+import {
+  ExactAsinRefreshLeaseError,
+  executeWithExactAsinRefreshLease,
+} from "@/services/exactAsinRefreshLease";
 import { getAffarioProductCandidateByAsin } from "@/services/keepaProductAdapter";
 import { persistKeepaProduct } from "@/services/keepaPersistence";
 import { getSupabaseServerClient } from "@/services/supabaseServer";
@@ -113,7 +117,10 @@ export type AffarioProductLookupResult = {
 export class AffarioProductLookupError extends Error {
   constructor(
     message: string,
-    public readonly code: "DATABASE_UNAVAILABLE"
+    public readonly code:
+      | "DATABASE_UNAVAILABLE"
+      | "REFRESH_IN_PROGRESS"
+      | "REFRESH_COORDINATION_UNAVAILABLE"
   ) {
     super(message);
     this.name = "AffarioProductLookupError";
@@ -681,54 +688,81 @@ export async function getAffarioProductByAsin(
   options: { context?: KeepaRequestContext } = {}
 ): Promise<AffarioProductLookupResult> {
   const normalizedAsin = normalizeKeepaAsin(asin);
-  const initialReadTime = Date.now();
-  const storedData = await readInitialStoredLookupData(
-    normalizedAsin,
-    initialReadTime
-  );
-  const cacheCheckTime = Date.now();
-
-  if (
-    storedData.product &&
-    storedData.snapshot &&
-    isFreshSnapshot(storedData.snapshot.requested_at, cacheCheckTime)
-  ) {
-    return buildLookupResult(
-      storedData,
-      "DATABASE_CACHE",
-      cacheCheckTime
-    );
-  }
-
-  const requestedAt = new Date().toISOString();
-  const keepaResult = await getAffarioProductCandidateByAsin(
-    normalizedAsin,
-    options
-  );
+  const context = options.context ?? "interactive";
 
   try {
-    await persistKeepaProduct({
-      result: keepaResult,
-      requestedAt,
+    return await executeWithExactAsinRefreshLease({
+      exactAsin: normalizedAsin,
+      context,
+      async readFreshCache(reason) {
+        const readTime = Date.now();
+        const storedData =
+          reason === "initial"
+            ? await readInitialStoredLookupData(normalizedAsin, readTime)
+            : await readStoredLookupData(normalizedAsin, readTime);
+        const cacheCheckTime = Date.now();
+
+        if (
+          !storedData.product ||
+          !storedData.snapshot ||
+          !isFreshSnapshot(
+            storedData.snapshot.requested_at,
+            cacheCheckTime
+          )
+        ) {
+          return null;
+        }
+
+        return buildLookupResult(
+          storedData,
+          "DATABASE_CACHE",
+          cacheCheckTime
+        );
+      },
+      async refresh() {
+        const requestedAt = new Date().toISOString();
+        const keepaResult = await getAffarioProductCandidateByAsin(
+          normalizedAsin,
+          { context }
+        );
+
+        try {
+          await persistKeepaProduct({
+            result: keepaResult,
+            requestedAt,
+          });
+        } catch {
+          throw new AffarioProductLookupError(
+            "Persistenza dati Keepa non disponibile.",
+            "DATABASE_UNAVAILABLE"
+          );
+        }
+
+        const refreshedReadTime = Date.now();
+        const refreshedStoredData = await readStoredLookupData(
+          normalizedAsin,
+          refreshedReadTime
+        );
+
+        return buildLookupResult(
+          refreshedStoredData,
+          "KEEPA_REFRESH",
+          refreshedReadTime,
+          keepaResult.usage,
+          keepaResult.tokenBudgetStatus
+        );
+      },
     });
-  } catch {
-    throw new AffarioProductLookupError(
-      "Persistenza dati Keepa non disponibile.",
-      "DATABASE_UNAVAILABLE"
-    );
+  } catch (error) {
+    if (error instanceof ExactAsinRefreshLeaseError) {
+      throw new AffarioProductLookupError(
+        "Aggiornamento prodotto temporaneamente non disponibile.",
+        error.code === "CONTENDED"
+          ? "REFRESH_IN_PROGRESS"
+          : "REFRESH_COORDINATION_UNAVAILABLE"
+      );
+    }
+
+    throw error;
   }
-
-  const refreshedReadTime = Date.now();
-  const refreshedStoredData = await readStoredLookupData(
-    normalizedAsin,
-    refreshedReadTime
-  );
-
-  return buildLookupResult(
-    refreshedStoredData,
-    "KEEPA_REFRESH",
-    refreshedReadTime,
-    keepaResult.usage,
-    keepaResult.tokenBudgetStatus
-  );
 }

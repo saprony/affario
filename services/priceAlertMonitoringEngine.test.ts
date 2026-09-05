@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createPriceAlertCheckRunner,
+  MAX_ALERT_MONITORING_ASINS_PER_RUN,
   PriceAlertMonitoringLookupControlError,
   TARGET_NOTIFICATION_CLAIM_LEASE_MS,
   type PriceAlertMonitoringDependencies,
@@ -272,6 +273,37 @@ test("ASIN differenti sono gruppi separati e maxAsins resta opzionale", async ()
   assert.equal(report.backgroundDeferredForRunLimit, 1);
 });
 
+test("hard cap assoluto limita a 10 anche senza opzione o con valore superiore", async () => {
+  const asins = Array.from(
+    { length: MAX_ALERT_MONITORING_ASINS_PER_RUN + 1 },
+    (_, index) => `B${String(index + 1).padStart(9, "0")}`
+  );
+  const createCappedHarness = () =>
+    createFakeHarness({
+      alerts: asins.map((productId, index) =>
+        createAlert({ id: index + 1, productId })
+      ),
+      latestChecks: new Map(asins.map((asin) => [asin, null])),
+      lookupPrices: new Map(asins.map((asin) => [asin, 110])),
+    });
+  const defaultHarness = createCappedHarness();
+  const oversizedHarness = createCappedHarness();
+
+  const defaultReport = await defaultHarness.run();
+  const oversizedReport = await oversizedHarness.run({ maxAsins: 99 });
+
+  assert.equal(
+    defaultHarness.lookupCalls.length,
+    MAX_ALERT_MONITORING_ASINS_PER_RUN
+  );
+  assert.equal(defaultReport.backgroundDeferredForRunLimit, 1);
+  assert.equal(
+    oversizedHarness.lookupCalls.length,
+    MAX_ALERT_MONITORING_ASINS_PER_RUN
+  );
+  assert.equal(oversizedReport.backgroundDeferredForRunLimit, 1);
+});
+
 test("il batch serve prima ASIN mai controllati e poi i controlli piu vecchi", async () => {
   const neverCheckedAsin = "B000000002";
   const harness = createFakeHarness({
@@ -469,6 +501,30 @@ test("la riserva background ferma il refresh senza valutare o notificare", async
   assert.equal(report.notificationsSent, 0);
   assert.equal(harness.records[0]?.targetReachedAt, null);
   assert.equal(harness.records[0]?.status, "active");
+});
+
+test("contesa refresh background salta il gruppo senza notificare", async () => {
+  const harness = createFakeHarness({
+    latestChecks: new Map([[PRIMARY_ASIN, null]]),
+    lookupErrors: new Map([
+      [
+        PRIMARY_ASIN,
+        new PriceAlertMonitoringLookupControlError(
+          "REFRESH_CONTENDED",
+          "UNKNOWN"
+        ),
+      ],
+    ]),
+  });
+
+  const report = await harness.run();
+
+  assert.equal(report.productRefreshLockContended, 1);
+  assert.equal(report.lookupFailures, 0);
+  assert.equal(report.refreshedProducts, 0);
+  assert.equal(report.notificationsSent, 0);
+  assert.equal(harness.records[0]?.status, "active");
+  assert.equal(harness.records[0]?.targetReachedAt, null);
 });
 
 test("un 429 background interrompe i refresh successivi del run", async () => {

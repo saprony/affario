@@ -577,6 +577,24 @@ nel repository.
 - Mutex del monitoring e lock refresh exact ASIN/cache stampede restano fuori
   scope e sono rinviati alla FUNZIONE 046B2.
 
+### 12.3 FUNZIONE 046B2 COMPLETATA
+
+- La concorrenza distribuita usa lease Postgres in
+  `public.distributed_leases`; le lease scadute sono recuperabili atomicamente
+  dopo un crash e non viene introdotto Redis.
+- Il monitoring globale usa una lease di 360 secondi; il refresh Keepa per exact
+  ASIN usa una lease di 60 secondi.
+- Ogni chiamata HTTP Keepa ha un timeout bounded di 30 secondi. Una cache hit
+  fresca usa zero RPC di lock e nessun lock o transazione database resta aperto
+  durante la chiamata al provider.
+- In caso di contesa il background esegue uno skip; il flusso interactive attende
+  al massimo 250 ms e svolge una sola rilettura della cache.
+- Il batch conserva il default di 5 exact ASIN e applica un hard cap assoluto di
+  10 exact ASIN per run.
+- La migration `20260904000000_create_distributed_leases.sql` è applicata e
+  allineata nella history remota; tabella e RPC restano accessibili soltanto al
+  ruolo server `service_role` con i privilegi minimi previsti.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -631,12 +649,13 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - La risposta tecnica definitiva Amazon è pendente e blocca la pubblicazione delle funzionalità reali Keepa/alert.
 - Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
   attivato; resta inattivo fino al go-live esplicitamente autorizzato.
-- Il lock distribuito della cache è futuro e va risolto prima di traffico elevato.
+- La FUNZIONE 046B2 di lock distribuito è completata e la migration è applicata
+  al remoto.
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **046B1**, validata tecnicamente e con migration
-  remote applicate; cron installato ma inattivo.
-- Funzione successiva: **046B2**, non iniziata.
+- Ultima funzione completata: **046B2**, validata localmente e con migration
+  remota applicata; cron installato ma inattivo.
+- Nessuna funzione successiva è avviata.
 
 `PublicHome`, deploy e funzioni successive restano invariati.

@@ -4,14 +4,30 @@ import test from "node:test";
 import {
   createPriceAlertMonitoringEndpoint,
   DEFAULT_ALERT_MONITORING_MAX_ASINS_PER_RUN,
+  MAX_ALERT_MONITORING_ASINS_PER_RUN,
   MIN_ALERT_MONITORING_CRON_SECRET_BYTES,
+  PRICE_ALERT_MONITORING_LEASE_SECONDS,
+  PRICE_ALERT_MONITORING_RESOURCE_KEY,
 } from "./priceAlertMonitoringEndpoint";
+import type {
+  DistributedLease,
+  DistributedLeaseClaimResult,
+} from "./distributedLease";
 import type {
   PriceAlertCheckOptions,
   PriceAlertCheckReport,
 } from "./priceAlertMonitoringEngine";
 
 const CRON_SECRET = "a-secure-dedicated-monitoring-secret-for-tests";
+
+function createDeferred() {
+  let resolvePromise!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  return { promise, resolve: resolvePromise };
+}
 
 function createReport(
   overrides: Partial<PriceAlertCheckReport> = {}
@@ -50,6 +66,7 @@ function createReport(
     tokenBudgetStatus: "OK",
     backgroundSkippedForReserve: 0,
     keepaRateLimited: 0,
+    productRefreshLockContended: 0,
     ...overrides,
   };
 }
@@ -78,8 +95,16 @@ function createHarness(input?: {
   runMonitoring?: (
     options?: PriceAlertCheckOptions
   ) => Promise<PriceAlertCheckReport>;
+  tryClaimMonitoringLease?: () => Promise<DistributedLeaseClaimResult>;
+  releaseMonitoringLease?: (
+    lease: DistributedLease
+  ) => Promise<boolean>;
 }) {
   let calls = 0;
+  let claimCalls = 0;
+  let releaseCalls = 0;
+  let leaseHeld = false;
+  let ownerSequence = 0;
   const receivedOptions: Array<PriceAlertCheckOptions | undefined> = [];
   const endpoint = createPriceAlertMonitoringEndpoint({
     async runMonitoring(options) {
@@ -94,12 +119,50 @@ function createHarness(input?: {
       enabled: input?.enabled,
       maxAsinsPerRun: input?.maxAsinsPerRun,
     }),
+    async tryClaimMonitoringLease() {
+      claimCalls += 1;
+
+      if (input?.tryClaimMonitoringLease) {
+        return input.tryClaimMonitoringLease();
+      }
+
+      if (leaseHeld) {
+        return { status: "contended" };
+      }
+
+      leaseHeld = true;
+      ownerSequence += 1;
+      return {
+        status: "acquired",
+        lease: {
+          resourceType: "monitoring_run",
+          resourceKeyHash: "a".repeat(64),
+          ownerToken: ownerSequence.toString(36).padStart(43, "a"),
+        },
+      };
+    },
+    async releaseMonitoringLease(lease) {
+      releaseCalls += 1;
+
+      if (input?.releaseMonitoringLease) {
+        return input.releaseMonitoringLease(lease);
+      }
+
+      leaseHeld = false;
+      return true;
+    },
   });
 
   return {
     endpoint,
     get calls() {
       return calls;
+    },
+    get claimCalls() {
+      return claimCalls;
+    },
+    get releaseCalls() {
+      return releaseCalls;
     },
     receivedOptions,
   };
@@ -177,21 +240,49 @@ test("secret corretto e enabled true eseguono una volta con limite prudente", as
   assert.deepEqual(harness.receivedOptions, [
     { maxAsins: DEFAULT_ALERT_MONITORING_MAX_ASINS_PER_RUN },
   ]);
+  assert.equal(harness.claimCalls, 1);
+  assert.equal(harness.releaseCalls, 1);
 });
 
-test("due POST autorizzati restano due run indipendenti", async () => {
-  const harness = createHarness({ enabled: "true" });
+test("lease monitoring è globale e supera maxDuration 300", () => {
+  assert.equal(PRICE_ALERT_MONITORING_RESOURCE_KEY, "price-alert-monitoring");
+  assert.ok(PRICE_ALERT_MONITORING_LEASE_SECONDS > 300);
+});
 
-  const responses = await Promise.all([
-    harness.endpoint.POST(createRequest()),
-    harness.endpoint.POST(createRequest()),
-  ]);
+test("il primo worker acquisisce e il secondo concorrente viene saltato", async () => {
+  const runStarted = createDeferred();
+  const runGate = createDeferred();
+  const harness = createHarness({
+    enabled: "true",
+    runMonitoring: async () => {
+      runStarted.resolve();
+      await runGate.promise;
+      return createReport();
+    },
+  });
 
-  assert.deepEqual(
-    responses.map((response) => response.status),
-    [200, 200]
-  );
+  const firstResponsePromise = harness.endpoint.POST(createRequest());
+  await runStarted.promise;
+  const secondResponse = await harness.endpoint.POST(createRequest());
+
+  assert.equal(secondResponse.status, 200);
+  assert.deepEqual(await secondResponse.json(), {
+    status: "skipped",
+    report: { monitoringRunSkippedAlreadyRunning: true },
+  });
+  assert.equal(harness.calls, 1);
+  assert.equal(harness.claimCalls, 2);
+  assert.equal(harness.releaseCalls, 0);
+
+  runGate.resolve();
+  const firstResponse = await firstResponsePromise;
+  assert.equal(firstResponse.status, 200);
+  assert.equal(harness.releaseCalls, 1);
+
+  const nextResponse = await harness.endpoint.POST(createRequest());
+  assert.equal(nextResponse.status, 200);
   assert.equal(harness.calls, 2);
+  assert.equal(harness.releaseCalls, 2);
 });
 
 test("report restituisce soltanto metriche aggregate consentite", async () => {
@@ -228,6 +319,7 @@ test("report restituisce soltanto metriche aggregate consentite", async () => {
       tokenBudgetStatus: "OK",
       backgroundSkippedForReserve: 0,
       keepaRateLimited: 0,
+      productRefreshLockContended: 0,
     },
   });
   assert.doesNotMatch(
@@ -271,4 +363,33 @@ test("configurazione max ASIN non valida fallisce senza eseguire", async () => {
   assert.equal(response.status, 503);
   assert.equal(harness.calls, 0);
   assertNoCache(response);
+});
+
+test("env 10 usa 10 e valori superiori sono sempre limitati a 10", async () => {
+  for (const configuredValue of ["10", "999"]) {
+    const harness = createHarness({
+      enabled: "true",
+      maxAsinsPerRun: configuredValue,
+    });
+    const response = await harness.endpoint.POST(createRequest());
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(harness.receivedOptions, [
+      { maxAsins: MAX_ALERT_MONITORING_ASINS_PER_RUN },
+    ]);
+  }
+});
+
+test("store della lease globale indisponibile fallisce chiuso", async () => {
+  const harness = createHarness({
+    enabled: "true",
+    tryClaimMonitoringLease: async () => {
+      throw new Error("lease store unavailable");
+    },
+  });
+  const response = await harness.endpoint.POST(createRequest());
+
+  assert.equal(response.status, 503);
+  assert.equal(harness.calls, 0);
+  assert.equal(harness.releaseCalls, 0);
 });
