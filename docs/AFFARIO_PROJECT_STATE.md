@@ -26,6 +26,8 @@ Prima di iniziare qualsiasi nuova funzione:
 - Branch: `master`.
 - Commit di partenza della Funzione 047A.1:
   `a871d4cccb85a2e8e94f2a4f33d16e5065ca0ab5`.
+- Commit di implementazione della Funzione 047A.2:
+  `57bc4d3f721aaa8e77048ea14428882a1431b8ef`.
 - Ultima funzione completata prima della remediation: **FUNZIONE 046B2**,
   validata localmente e con migration remota applicata. Il job Cron resta
   inattivo e l'attivazione reale è rinviata al go-live.
@@ -172,6 +174,11 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   `KEEPA_BACKGROUND_TOKEN_RESERVE`, con default V1 di 120 token. Sul piano
   corrente da 20 token/minuto equivale a circa 6 minuti di refill e al 10% del
   bucket teorico massimo di 1.200 token, proteggendo il traffico utente.
+- La **FUNZIONE 047A.2 è implementata e verificata localmente e sul database
+  remoto**: il finding 047A-003 è corretto e la selezione degli snapshot per lo
+  scheduling usa una sola RPC batch, invece di una query sequenziale per ogni
+  ASIN. Monitoring e Cron restano inattivi; deploy e smoke Production sono
+  ancora pendenti.
 - La telemetria del bucket è acquisita passivamente da ogni risposta Keepa,
   incluse le risposte non-200/429, e predisposta in uno stato persistente
   aggregato server-only. Richieste interattive e background hanno contatori 429
@@ -392,8 +399,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 046B1 | **COMPLETATA** — rate limit distribuito HMAC multi-quota e hardening RLS/ACL di `price_alerts` |
 | 046B2 | **COMPLETATA** — lease distribuite per monitoring e refresh exact ASIN, timeout Keepa e hard cap batch |
 | 047A.1 | **IMPLEMENTAZIONE TECNICA COMPLETATA / GATE ESTERNO APERTO** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` applicata e verificata, gate `supabase_admin` aperto pre-go-live |
+| 047A.2 | **IMPLEMENTATA / VERIFICATA LOCALMENTE E SUL DATABASE REMOTO / PENDING DEPLOY E SMOKE PRODUCTION** — finding 047A-003 corretto con scheduling snapshot batch tramite RPC POST server-only; monitoring e Cron restano inattivi |
 
-Totale associazioni registrate: **40**.
+Totale associazioni registrate: **41**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -484,6 +492,16 @@ telemetria passiva e contatori 429 separati. L'ordinamento dei gruppi usa prima
 gli ASIN mai controllati, poi il `dueAt` più vecchio e infine l'exact ASIN come
 tie-break; `backgroundDeferredForRunLimit` resta distinto da riserva, rate limit
 e gruppi non ancora dovuti.
+
+La Funzione 047A.2 ha sostituito le `N` letture sequenziali degli snapshot
+necessarie allo scheduling con una singola chiamata batch alla RPC
+`public.affario_price_alert_latest_product_checks(text[])`: Supabase usa un
+`POST` con l'array degli ASIN nel body, senza lista `.in(...)` serializzata
+nell'URL. La RPC sceglie indipendentemente l'ultimo snapshot di ogni ASIN con
+`DISTINCT ON (asin)` e `ORDER BY asin, requested_at DESC`; il numero di richieste
+snapshot della fase di selezione è quindi O(1). Default 5, hard cap 10,
+frequenze, ordinamento, lease, idempotenza e priorità interactive restano
+invariati.
 
 ### 10.2 Decisione roadmap — prefetch/catalogo caldo futuro
 
@@ -643,6 +661,40 @@ nel repository.
   e allineata nella migration history. Il gate esterno relativo al creator role
   `supabase_admin` resta aperto pre-go-live e non è dichiarato risolto.
 
+### 12.5 FUNZIONE 047A.2 — IMPLEMENTATA / VERIFICATA LOCALMENTE E SUL DATABASE REMOTO / PENDING DEPLOY E SMOKE PRODUCTION
+
+- Il finding 047A-003 è corretto: la fase di scheduling snapshot è passata da
+  `N` query sequenziali a una RPC batch O(1) nel numero di richieste. La RPC è
+  `public.affario_price_alert_latest_product_checks(text[])`.
+- Il client Supabase invia un `POST` con l'array ASIN nel body; non usa più
+  `.in(...)` e non serializza la lista nell'URL. La funzione server-side legge
+  soltanto `public.keepa_snapshots` e seleziona un solo latest snapshot per
+  ASIN mediante `DISTINCT ON (asin)` e
+  `ORDER BY asin, requested_at DESC`.
+- La migration
+  `20260906010000_create_price_alert_latest_checks_rpc.sql` è applicata sul
+  Supabase remoto. I permessi effettivi verificati concedono `EXECUTE` a
+  `postgres` e `service_role`, senza accesso per `PUBLIC`, `anon` o
+  `authenticated`.
+- Il test PostgreSQL reale con due ASIN distinti e più snapshot per ciascuno ha
+  restituito indipendentemente lo snapshot più recente corretto per entrambi:
+  `match = true` in entrambi i casi.
+- La migration history è stata riallineata tramite
+  `npx supabase@latest migration repair 20260906010000 --status applied`; la
+  successiva `migration list` mostra Local = Remote fino a `20260906010000`.
+- La validazione locale finale conta 227 test su 227 superati, con zero
+  fallimenti; lint, typecheck e build sono verdi e `npm audit` riporta zero
+  vulnerabilità.
+- Monitoring e Cron restano OFF. Il deploy e lo smoke test Production della
+  Funzione 047A.2 sono ancora pendenti.
+- Rischio residuo separato: `loadActivePriceAlerts()` non pagina e il limite
+  massimo righe PostgREST/Supabase può troncare il dataset quando gli alert
+  attivi diventano numerosi. L'impatto è basso per la V1 e il volume attuale;
+  il rischio futuro dovrà essere risolto con paginazione deterministica oppure
+  scheduling server-side.
+- Il gate dei default privileges del creator role `supabase_admin` resta
+  **OPEN PRE-GO-LIVE** e non è modificato dalla Funzione 047A.2.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -704,12 +756,18 @@ Le decisioni seguenti restano nella storia ma sono superate:
   attivato; resta inattivo fino al go-live esplicitamente autorizzato.
 - La FUNZIONE 046B2 di lock distribuito è completata e la migration è applicata
   al remoto.
+- `loadActivePriceAlerts()` non pagina: il limite massimo righe
+  PostgREST/Supabase ha basso impatto al volume V1 attuale, ma costituisce un
+  rischio futuro da risolvere con paginazione deterministica oppure scheduling
+  server-side.
 
 ## 17. Prossimo passo
 
-- La **FUNZIONE 047A.1** ha l'implementazione tecnica completata. La migration
-  dei default ACL di `postgres` è applicata, verificata e allineata nella
-  history remota; il gate esterno `supabase_admin` resta aperto pre-go-live e
-  non è dichiarato risolto. Cron e monitoring restano inattivi.
+- La **FUNZIONE 047A.2** è implementata, verificata localmente e verificata sul
+  database remoto; restano pendenti deploy e smoke Production. La migration
+  dei default ACL di `postgres` della Funzione 047A.1 resta applicata,
+  verificata e allineata nella history remota, mentre il gate esterno
+  `supabase_admin` resta aperto pre-go-live e non è dichiarato risolto. Cron e
+  monitoring restano inattivi.
 
 `PublicHome`, deploy e funzioni successive restano invariati.
