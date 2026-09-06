@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -13,10 +15,19 @@ import {
   type TargetEmailSendResult,
   type TargetPriceAlertDelivery,
 } from "./priceAlertMonitoringEngine";
+import { loadLatestPriceAlertProductChecks } from "./priceAlertMonitoringStore";
 
 const STARTED_AT = new Date("2026-08-28T12:00:00.000Z");
 const PRIMARY_ASIN = "B0FQGPJCJK";
 const SECONDARY_ASIN = "B000000001";
+const PRICE_ALERT_LATEST_CHECKS_MIGRATION_PATH = resolve(
+  process.cwd(),
+  "supabase/migrations/20260906010000_create_price_alert_latest_checks_rpc.sql"
+);
+const PRICE_ALERT_MONITORING_STORE_PATH = resolve(
+  process.cwd(),
+  "services/priceAlertMonitoringStore.ts"
+);
 
 function createAlert(
   overrides: Partial<PriceAlertMonitoringRecord> = {}
@@ -47,6 +58,7 @@ type FakeHarnessOptions = {
     string,
     "OK" | "RESERVE" | "EXHAUSTED" | "UNKNOWN"
   >;
+  latestChecksError?: unknown;
 };
 
 function createFakeHarness({
@@ -64,10 +76,11 @@ function createFakeHarness({
   cacheHits = new Set(),
   lookupErrors = new Map(),
   tokenBudgetStatuses = new Map(),
+  latestChecksError,
 }: FakeHarnessOptions = {}) {
   const records = alerts.map((alert) => ({ ...alert }));
   const lookupCalls: string[] = [];
-  const snapshotCalls: string[] = [];
+  const schedulingBatchCalls: string[][] = [];
   const sendCalls: TargetPriceAlertDelivery[] = [];
   const completedIds: number[] = [];
   const releasedIds: number[] = [];
@@ -93,9 +106,24 @@ function createFakeHarness({
             staleBeforeMilliseconds
       );
     },
-    async getLatestProductCheck(exactAsin) {
-      snapshotCalls.push(exactAsin);
-      return latestChecks.get(exactAsin) ?? null;
+    async getLatestProductChecks(exactAsins) {
+      schedulingBatchCalls.push([...exactAsins]);
+
+      if (latestChecksError !== undefined) {
+        throw latestChecksError;
+      }
+
+      const result = new Map<string, PriceAlertProductCheck>();
+
+      for (const exactAsin of exactAsins) {
+        const latestCheck = latestChecks.get(exactAsin);
+
+        if (latestCheck) {
+          result.set(exactAsin, latestCheck);
+        }
+      }
+
+      return result;
     },
     async lookupProduct(exactAsin) {
       lookupCalls.push(exactAsin);
@@ -214,6 +242,7 @@ function createFakeHarness({
     records,
     releasedIds,
     run: createPriceAlertCheckRunner(dependencies),
+    schedulingBatchCalls,
     sendCalls,
     setClock(value: Date) {
       currentTime = new Date(value);
@@ -227,9 +256,223 @@ function createFakeHarness({
     setSendResult(value: TargetEmailSendResult) {
       sendResult = value;
     },
-    snapshotCalls,
   };
 }
+
+test("zero candidati non eseguono query scheduling o lookup prodotto", async () => {
+  const harness = createFakeHarness({ alerts: [] });
+
+  const report = await harness.run({ maxAsins: 5 });
+
+  assert.equal(report.activeAlerts, 0);
+  assert.equal(report.uniqueAsins, 0);
+  assert.equal(report.dueAsins, 0);
+  assert.deepEqual(harness.schedulingBatchCalls, []);
+  assert.deepEqual(harness.lookupCalls, []);
+});
+
+test("un candidato usa una sola query batch scheduling", async () => {
+  const harness = createFakeHarness();
+
+  const report = await harness.run({ maxAsins: 5 });
+
+  assert.equal(report.uniqueAsins, 1);
+  assert.deepEqual(harness.schedulingBatchCalls, [[PRIMARY_ASIN]]);
+  assert.deepEqual(harness.lookupCalls, [PRIMARY_ASIN]);
+});
+
+test(
+  "lo store non esegue RPC quando la lista ASIN e vuota",
+  { concurrency: false },
+  async () => {
+    const originalFetch = globalThis.fetch;
+    let requestCount = 0;
+
+    globalThis.fetch = (async () => {
+      requestCount += 1;
+      return Response.json([]);
+    }) as typeof fetch;
+
+    try {
+      const result = await loadLatestPriceAlertProductChecks([]);
+
+      assert.equal(requestCount, 0);
+      assert.equal(result.size, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  "lo store usa una RPC POST per lista e mappa due latest check indipendenti",
+  { concurrency: false },
+  async () => {
+    const originalFetch = globalThis.fetch;
+    const originalSupabaseUrl = process.env.SUPABASE_URL;
+    const originalSupabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+    const requestedCalls: Array<{
+      body: { p_asins: string[] };
+      method: string;
+      url: URL;
+    }> = [];
+    const errorAsin = "BZZZZZZZZZ";
+    const manyAsins = [
+      PRIMARY_ASIN,
+      ...Array.from(
+        { length: 99 },
+        (_, index) => `B${String(index + 1).padStart(9, "0")}`
+      ),
+    ];
+
+    process.env.SUPABASE_URL = "https://affario.test";
+    process.env.SUPABASE_SECRET_KEY = "test-service-role-key";
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      const body = (await request.clone().json()) as { p_asins: string[] };
+
+      requestedCalls.push({
+        body,
+        method: request.method,
+        url: new URL(request.url),
+      });
+
+      if (body.p_asins.includes(errorAsin)) {
+        return Response.json(
+          { code: "XX000", message: "database details" },
+          { status: 500 }
+        );
+      }
+
+      return Response.json(
+        [
+          {
+            asin: PRIMARY_ASIN,
+            requested_at: "2026-08-28T12:00:00.000Z",
+            buybox_current_cents: 10_500,
+          },
+          {
+            asin: SECONDARY_ASIN,
+            requested_at: "2026-08-28T13:00:00.000Z",
+            buybox_current_cents: 9_900,
+          },
+        ].filter((row) => body.p_asins.includes(row.asin))
+      );
+    }) as typeof fetch;
+
+    try {
+      const singleResult = await loadLatestPriceAlertProductChecks([
+        PRIMARY_ASIN,
+      ]);
+
+      assert.equal(requestedCalls.length, 1);
+      assert.deepEqual(singleResult.get(PRIMARY_ASIN), {
+        requested_at: "2026-08-28T12:00:00.000Z",
+        buybox_current_cents: 10_500,
+      });
+
+      const manyResult = await loadLatestPriceAlertProductChecks([
+        ...manyAsins,
+        PRIMARY_ASIN,
+        SECONDARY_ASIN,
+      ]);
+
+      assert.equal(requestedCalls.length, 2);
+      assert.equal(requestedCalls[0]?.method, "POST");
+      assert.equal(requestedCalls[1]?.method, "POST");
+      assert.equal(
+        requestedCalls[1]?.url.pathname,
+        "/rest/v1/rpc/affario_price_alert_latest_product_checks"
+      );
+      assert.equal(requestedCalls[1]?.url.search, "");
+      assert.deepEqual(requestedCalls[0]?.body, {
+        p_asins: [PRIMARY_ASIN],
+      });
+      assert.deepEqual(requestedCalls[1]?.body, {
+        p_asins: manyAsins,
+      });
+      assert.deepEqual(manyResult.get(PRIMARY_ASIN), {
+        requested_at: "2026-08-28T12:00:00.000Z",
+        buybox_current_cents: 10_500,
+      });
+      assert.deepEqual(manyResult.get(SECONDARY_ASIN), {
+        requested_at: "2026-08-28T13:00:00.000Z",
+        buybox_current_cents: 9_900,
+      });
+      assert.equal(manyResult.has("B000000002"), false);
+
+      await assert.rejects(
+        loadLatestPriceAlertProductChecks([errorAsin]),
+        new Error("Lettura batch degli ultimi controlli prodotto fallita.")
+      );
+      assert.equal(requestedCalls.length, 3);
+    } finally {
+      globalThis.fetch = originalFetch;
+
+      if (originalSupabaseUrl === undefined) {
+        delete process.env.SUPABASE_URL;
+      } else {
+        process.env.SUPABASE_URL = originalSupabaseUrl;
+      }
+
+      if (originalSupabaseSecretKey === undefined) {
+        delete process.env.SUPABASE_SECRET_KEY;
+      } else {
+        process.env.SUPABASE_SECRET_KEY = originalSupabaseSecretKey;
+      }
+    }
+  }
+);
+
+test("la migration seleziona staticamente il latest snapshot per ogni ASIN", () => {
+  const sql = readFileSync(PRICE_ALERT_LATEST_CHECKS_MIGRATION_PATH, "utf8");
+  const store = readFileSync(PRICE_ALERT_MONITORING_STORE_PATH, "utf8");
+
+  assert.match(
+    sql,
+    /create function public\.affario_price_alert_latest_product_checks\(\s*p_asins text\[\]/i
+  );
+  assert.match(sql, /security invoker/i);
+  assert.doesNotMatch(sql, /security definer/i);
+  assert.match(sql, /set search_path = ''/i);
+  assert.match(
+    sql,
+    /returns table \(\s*asin text,\s*requested_at timestamptz,\s*buybox_current_cents integer\s*\)/i
+  );
+  assert.match(
+    sql,
+    /select distinct on \(snapshot\.asin\)[\s\S]*from public\.keepa_snapshots as snapshot/i
+  );
+  assert.match(
+    sql,
+    /where snapshot\.asin = any \(coalesce\(p_asins, '\{\}'::text\[\]\)\)/i
+  );
+  assert.match(
+    sql,
+    /order by snapshot\.asin, snapshot\.requested_at desc/i
+  );
+  assert.match(
+    sql,
+    /revoke execute on function public\.affario_price_alert_latest_product_checks\([\s\S]*?\) from public, anon, authenticated/i
+  );
+  assert.match(
+    sql,
+    /grant execute on function public\.affario_price_alert_latest_product_checks\([\s\S]*?\) to service_role/i
+  );
+  assert.doesNotMatch(
+    sql,
+    /\b(?:insert|update|delete|merge|truncate)\s+(?:into|from|table)?\s*public\./i
+  );
+  assert.match(
+    store,
+    /\.rpc\(\s*"affario_price_alert_latest_product_checks"/i
+  );
+  assert.doesNotMatch(store, /\.in\s*\(/i);
+});
 
 test("100 alert sullo stesso exact ASIN producono un solo lookup", async () => {
   const alerts = Array.from({ length: 100 }, (_, index) =>
@@ -246,6 +489,7 @@ test("100 alert sullo stesso exact ASIN producono un solo lookup", async () => {
   assert.equal(report.uniqueAsins, 1);
   assert.equal(report.productLookups, 1);
   assert.deepEqual(harness.lookupCalls, [PRIMARY_ASIN]);
+  assert.deepEqual(harness.schedulingBatchCalls, [[PRIMARY_ASIN]]);
   assert.equal(report.notificationsSent, 100);
 });
 
@@ -273,6 +517,27 @@ test("ASIN differenti sono gruppi separati e maxAsins resta opzionale", async ()
   assert.equal(report.backgroundDeferredForRunLimit, 1);
 });
 
+test("oltre il default 5 la selezione resta una query e limita i lookup a 5", async () => {
+  const asins = Array.from({ length: 8 }, (_, index) =>
+    `B${String(index + 1).padStart(9, "0")}`
+  );
+  const harness = createFakeHarness({
+    alerts: asins.map((productId, index) =>
+      createAlert({ id: index + 1, productId })
+    ),
+    latestChecks: new Map(asins.map((asin) => [asin, null])),
+    lookupPrices: new Map(asins.map((asin) => [asin, 110])),
+  });
+
+  const report = await harness.run({ maxAsins: 5 });
+
+  assert.equal(harness.schedulingBatchCalls.length, 1);
+  assert.deepEqual(harness.schedulingBatchCalls[0], asins);
+  assert.equal(harness.lookupCalls.length, 5);
+  assert.deepEqual(harness.lookupCalls, asins.slice(0, 5));
+  assert.equal(report.backgroundDeferredForRunLimit, 3);
+});
+
 test("hard cap assoluto limita a 10 anche senza opzione o con valore superiore", async () => {
   const asins = Array.from(
     { length: MAX_ALERT_MONITORING_ASINS_PER_RUN + 1 },
@@ -296,11 +561,13 @@ test("hard cap assoluto limita a 10 anche senza opzione o con valore superiore",
     defaultHarness.lookupCalls.length,
     MAX_ALERT_MONITORING_ASINS_PER_RUN
   );
+  assert.equal(defaultHarness.schedulingBatchCalls.length, 1);
   assert.equal(defaultReport.backgroundDeferredForRunLimit, 1);
   assert.equal(
     oversizedHarness.lookupCalls.length,
     MAX_ALERT_MONITORING_ASINS_PER_RUN
   );
+  assert.equal(oversizedHarness.schedulingBatchCalls.length, 1);
   assert.equal(oversizedReport.backgroundDeferredForRunLimit, 1);
 });
 
@@ -371,12 +638,32 @@ test("un gruppo non dovuto non consuma il limite del batch", async () => {
 
   const report = await harness.run({ maxAsins: 1 });
 
-  assert.deepEqual(harness.snapshotCalls, [PRIMARY_ASIN, SECONDARY_ASIN]);
+  assert.deepEqual(harness.schedulingBatchCalls, [
+    [PRIMARY_ASIN, SECONDARY_ASIN],
+  ]);
   assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
   assert.equal(report.skippedNotDue, 1);
   assert.equal(report.dueAsins, 1);
   assert.equal(report.deferredAsins, 0);
   assert.equal(report.backgroundDeferredForRunLimit, 0);
+});
+
+test("errore DB batch fallisce chiuso prima di ogni lookup prodotto", async () => {
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+    ],
+    latestChecksError: new Error("database unavailable"),
+  });
+
+  const report = await harness.run({ maxAsins: 1 });
+
+  assert.equal(harness.schedulingBatchCalls.length, 1);
+  assert.equal(report.schedulingFailures, 2);
+  assert.equal(report.productLookups, 0);
+  assert.deepEqual(harness.lookupCalls, []);
+  assert.deepEqual(harness.sendCalls, []);
 });
 
 test("la fairness ordina per dueAt e non privilegia la fascia piu vicina", async () => {
@@ -412,6 +699,27 @@ test("la fairness ordina per dueAt e non privilegia la fascia piu vicina", async
   assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
   assert.equal(report.deferredAsins, 1);
   assert.equal(report.backgroundDeferredForRunLimit, 1);
+});
+
+test("a parita di scheduling l'ordering per exact ASIN resta stabile", async () => {
+  const harness = createFakeHarness({
+    alerts: [
+      createAlert(),
+      createAlert({ id: 2, productId: SECONDARY_ASIN }),
+    ],
+    latestChecks: new Map([
+      [PRIMARY_ASIN, null],
+      [SECONDARY_ASIN, null],
+    ]),
+    lookupPrices: new Map([
+      [PRIMARY_ASIN, 110],
+      [SECONDARY_ASIN, 110],
+    ]),
+  });
+
+  await harness.run({ maxAsins: 1 });
+
+  assert.deepEqual(harness.lookupCalls, [SECONDARY_ASIN]);
 });
 
 test("target differenti usano l'intervallo più breve del gruppo", async () => {

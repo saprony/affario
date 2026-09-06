@@ -31,8 +31,8 @@ import {
   releaseTargetNotificationClaim,
 } from "@/services/priceAlertNotificationState";
 import {
-  getLatestPriceAlertProductCheck,
   loadActivePriceAlerts,
+  loadLatestPriceAlertProductChecks,
   loadStaleTargetNotificationClaims,
   type StoredActivePriceAlert,
 } from "@/services/priceAlertMonitoringStore";
@@ -114,9 +114,9 @@ export type PriceAlertMonitoringDependencies = {
   loadStaleClaims: (
     staleBefore: string
   ) => Promise<readonly PriceAlertMonitoringRecord[]>;
-  getLatestProductCheck: (
-    exactAsin: string
-  ) => Promise<PriceAlertProductCheck | null>;
+  getLatestProductChecks: (
+    exactAsins: readonly string[]
+  ) => Promise<ReadonlyMap<string, PriceAlertProductCheck>>;
   lookupProduct: (
     exactAsin: string
   ) => Promise<PriceAlertProductLookup>;
@@ -554,16 +554,22 @@ export function createPriceAlertCheckRunner(
     }
 
     const dueGroups: ScheduledPriceAlertGroup[] = [];
+    let latestChecks: ReadonlyMap<string, PriceAlertProductCheck>;
+
+    try {
+      latestChecks =
+        groupedAlerts.size === 0
+          ? new Map()
+          : await dependencies.getLatestProductChecks([
+              ...groupedAlerts.keys(),
+            ]);
+    } catch {
+      report.schedulingFailures += groupedAlerts.size;
+      return report;
+    }
 
     for (const [exactAsin, alerts] of groupedAlerts) {
-      let latestCheck: PriceAlertProductCheck | null;
-
-      try {
-        latestCheck = await dependencies.getLatestProductCheck(exactAsin);
-      } catch {
-        report.schedulingFailures += 1;
-        continue;
-      }
+      const latestCheck = latestChecks.get(exactAsin) ?? null;
 
       const groupIntervalMs = getPriceAlertGroupIntervalMs(
         latestCheck?.currentPrice ?? null,
@@ -726,18 +732,21 @@ const runProductionPriceAlertCheck = createPriceAlertCheckRunner({
       mapStoredAlert
     );
   },
-  async getLatestProductCheck(exactAsin) {
-    const snapshot = await getLatestPriceAlertProductCheck(exactAsin);
+  async getLatestProductChecks(exactAsins) {
+    const snapshots = await loadLatestPriceAlertProductChecks(exactAsins);
 
-    return snapshot
-      ? {
+    return new Map(
+      [...snapshots].map(([exactAsin, snapshot]) => [
+        exactAsin,
+        {
           requestedAt: snapshot.requested_at,
           currentPrice:
             snapshot.buybox_current_cents === null
               ? null
               : snapshot.buybox_current_cents / 100,
-        }
-      : null;
+        },
+      ])
+    );
   },
   async lookupProduct(exactAsin) {
     let result: Awaited<ReturnType<typeof getAffarioProductByAsin>>;

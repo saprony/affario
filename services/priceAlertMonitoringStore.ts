@@ -25,6 +25,10 @@ export type StoredPriceAlertProductCheck = {
   buybox_current_cents: number | null;
 };
 
+type StoredLatestPriceAlertProductCheck = StoredPriceAlertProductCheck & {
+  asin: string;
+};
+
 export async function loadActivePriceAlerts(): Promise<
   readonly StoredActivePriceAlert[]
 > {
@@ -69,22 +73,36 @@ export async function loadStaleTargetNotificationClaims(
   return (data ?? []) as StoredActivePriceAlert[];
 }
 
-export async function getLatestPriceAlertProductCheck(
-  exactAsin: string
-): Promise<StoredPriceAlertProductCheck | null> {
-  const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .schema("public")
-    .from("keepa_snapshots")
-    .select("requested_at,buybox_current_cents")
-    .eq("asin", exactAsin)
-    .order("requested_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<StoredPriceAlertProductCheck>();
+export async function loadLatestPriceAlertProductChecks(
+  exactAsins: readonly string[]
+): Promise<ReadonlyMap<string, StoredPriceAlertProductCheck>> {
+  const uniqueExactAsins = [...new Set(exactAsins)];
 
-  if (error) {
-    throw new Error("Lettura dell'ultimo controllo prodotto fallita.");
+  if (uniqueExactAsins.length === 0) {
+    return new Map();
   }
 
-  return data;
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.schema("public").rpc(
+    "affario_price_alert_latest_product_checks",
+    {
+      p_asins: uniqueExactAsins,
+    }
+  );
+
+  if (error) {
+    throw new Error("Lettura batch degli ultimi controlli prodotto fallita.");
+  }
+
+  const rows = (data ?? []) as StoredLatestPriceAlertProductCheck[];
+  const latestChecks = new Map<string, StoredPriceAlertProductCheck>();
+
+  for (const row of rows) {
+    latestChecks.set(row.asin, {
+      requested_at: row.requested_at,
+      buybox_current_cents: row.buybox_current_cents,
+    });
+  }
+
+  return latestChecks;
 }
