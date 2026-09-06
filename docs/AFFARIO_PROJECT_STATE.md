@@ -391,7 +391,7 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 045 | **COMPLETATA** — endpoint POST interno protetto e kill switch fail-closed; Supabase Cron orario applicato ma inattivo; frequenze effettive 24h/12h/6h/2h, massimo 5 ASIN/run configurabile, fairness, priorità Keepa interactive, riserva background configurabile con default 120, telemetria bucket passiva, 429 distinti, background fail-closed, bootstrap/lease recuperabili e `backgroundDeferredForRunLimit` |
 | 046B1 | **COMPLETATA** — rate limit distribuito HMAC multi-quota e hardening RLS/ACL di `price_alerts` |
 | 046B2 | **COMPLETATA** — lease distribuite per monitoring e refresh exact ASIN, timeout Keepa e hard cap batch |
-| 047A.1 | **IN REVIEW / PARZIALE** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` preparata ma non applicata, gate `supabase_admin` aperto |
+| 047A.1 | **IMPLEMENTAZIONE TECNICA COMPLETATA / GATE ESTERNO APERTO** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` applicata e verificata, gate `supabase_admin` aperto pre-go-live |
 
 Totale associazioni registrate: **40**.
 
@@ -583,12 +583,22 @@ nel repository.
   `20260906000000_harden_public_default_privileges.sql` gestisce soltanto i
   default ACL del creator role `postgres`: revoca ad `anon`/`authenticated` i
   privilegi sulle future tables, sequences e functions e revoca a `PUBLIC`
-  quelli sulle future functions. È preparata localmente ma non applicata né
-  verificata sul database remoto e non modifica ACL di oggetti esistenti. I
-  default ACL del creator role `supabase_admin` non sono modificabili dal
-  normale ruolo migration e restano un gate pre-go-live separato, da chiudere
-  tramite un percorso Supabase autorizzato. Il finding 047A-004 resta quindi
-  **PARTIAL / OPEN GATE**.
+  quelli sulle future functions. La migration è stata applicata manualmente
+  con successo nel Supabase SQL Editor e non modifica ACL di oggetti esistenti.
+  L'audit remoto successivo ha verificato l'assenza dei default ACL da
+  `postgres` verso `anon` e `authenticated` per tutti e tre i tipi di oggetto e
+  l'assenza di `EXECUTE` a `PUBLIC` sulle future functions; i privilegi di
+  `service_role` e del creator `postgres` sono rimasti invariati. La history è
+  stata riallineata con Supabase CLI tramite
+  `npx supabase@latest migration repair 20260906000000 --status applied`; la
+  verifica finale `npx supabase@latest migration list` mostra Local = Remote
+  per tutte le migration fino a `20260906000000`. La componente `postgres` del
+  finding 047A-004 è quindi **IMPLEMENTATA / APPLICATA REMOTAMENTE /
+  VERIFICATA**. I default ACL del creator role `supabase_admin` sono rimasti
+  invariati e permissivi: non sono modificabili dal normale ruolo migration e
+  restano un gate pre-go-live separato, da chiudere tramite un percorso
+  Supabase autorizzato. Il finding complessivo resta **PARTIAL / OPEN GATE** per
+  questa sola componente residua.
 - Le due migration B1 sono applicate e allineate nella history remota: stato/RPC
   del rate limiter e hardening RLS/privilegi di `price_alerts`. Il dry-run
   successivo è pulito, le 6 righe alert sono invariate e la tabella anti-abuso
@@ -614,7 +624,7 @@ nel repository.
   allineata nella history remota; tabella e RPC restano accessibili soltanto al
   ruolo server `service_role` con i privilegi minimi previsti.
 
-### 12.4 FUNZIONE 047A.1 IN REVIEW / PARZIALE
+### 12.4 FUNZIONE 047A.1 — IMPLEMENTAZIONE TECNICA COMPLETATA / GATE ESTERNO APERTO
 
 - Il GET della pagina personale di gestione riusa le policy distribuite B1:
   20 richieste ogni 5 minuti per client e 10 ogni 5 minuti per token, consumate
@@ -629,10 +639,9 @@ nel repository.
 - Sono disponibili gli script ufficiali `npm test` e `npm run typecheck` senza
   nuove dipendenze; il runner richiede Node.js 22.18.0 o successivo, seleziona
   soltanto test AFFARIO tracciati da Git e ignora ogni segmento `node_modules`.
-- La migration dei default ACL di `postgres` resta intenzionalmente non
-  applicata e non verificata sul remoto in questa funzione. Il gate separato
-  relativo al creator role `supabase_admin` resta aperto; perciò la 047A.1 non
-  è ancora completata.
+- La migration dei default ACL di `postgres` è applicata, verificata sul remoto
+  e allineata nella migration history. Il gate esterno relativo al creator role
+  `supabase_admin` resta aperto pre-go-live e non è dichiarato risolto.
 
 ## 13. Necessario prima del go-live
 
@@ -698,8 +707,9 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Funzione corrente: **047A.1 IN REVIEW / PARZIALE**. La migration dei default
-  ACL di `postgres` non è applicata né verificata sul remoto e il gate separato
-  `supabase_admin` resta aperto; cron e monitoring restano inattivi.
+- La **FUNZIONE 047A.1** ha l'implementazione tecnica completata. La migration
+  dei default ACL di `postgres` è applicata, verificata e allineata nella
+  history remota; il gate esterno `supabase_admin` resta aperto pre-go-live e
+  non è dichiarato risolto. Cron e monitoring restano inattivi.
 
 `PublicHome`, deploy e funzioni successive restano invariati.
