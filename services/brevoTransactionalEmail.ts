@@ -18,6 +18,8 @@ const BREVO_EMAIL_EVENTS_ENDPOINT =
 const BREVO_TARGET_EVENT_LOOKBACK_DAYS = 90;
 const UUID_URL_NAMESPACE = "6ba7b8119dad11d180b400c04fd430c8";
 
+export const BREVO_HTTP_TIMEOUT_MS = 10_000;
+
 type AlertConfirmationEmail = AlertConfirmationEmailDetails & {
   recipientEmail: string;
 };
@@ -34,8 +36,8 @@ type BrevoTransactionalMessage = Pick<
 
 export type TargetEmailSendResult =
   | { status: "accepted" }
-  | { status: "rejected" }
-  | { status: "unknown" };
+  | { status: "rejected"; reason: "configuration" | "provider" }
+  | { status: "unknown"; reason: "timeout" | "network" | "provider" };
 
 export type TargetEmailProviderEventStatus =
   | "accepted"
@@ -51,7 +53,23 @@ type BrevoTargetEmailGatewayOptions = {
   requester?: typeof fetch;
   getApiKey?: () => string | undefined;
   clock?: () => Date;
+  timeoutMilliseconds?: number;
 };
+
+export type BrevoTransactionalEmailErrorCode =
+  | "TIMEOUT"
+  | "NETWORK_ERROR"
+  | "HTTP_ERROR";
+
+export class BrevoTransactionalEmailError extends Error {
+  constructor(
+    readonly code: BrevoTransactionalEmailErrorCode,
+    readonly httpStatus?: number
+  ) {
+    super("Servizio email transazionale temporaneamente non disponibile.");
+    this.name = "BrevoTransactionalEmailError";
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,31 +142,56 @@ function eventContainsTag(event: unknown, eventTag: string): boolean {
   );
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
+function createBrevoTimeoutSignal(timeoutMilliseconds: number): AbortSignal {
+  if (
+    !Number.isSafeInteger(timeoutMilliseconds) ||
+    timeoutMilliseconds <= 0
+  ) {
+    throw new Error("Timeout Brevo non valido.");
+  }
+
+  return AbortSignal.timeout(timeoutMilliseconds);
+}
+
 async function sendBrevoTransactionalEmail(
   recipientEmail: string,
   message: BrevoTransactionalMessage,
   requester: typeof fetch,
-  apiKey: string
+  apiKey: string,
+  timeoutMilliseconds: number
 ): Promise<void> {
-  const response = await requester(BREVO_EMAIL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "api-key": apiKey,
-    },
-    body: JSON.stringify({
-      sender: {
-        name: "AFFARIO",
-        email: "alert@notify.affario.it",
+  let response: Response;
+
+  try {
+    response = await requester(BREVO_EMAIL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "api-key": apiKey,
       },
-      to: [{ email: recipientEmail }],
-      ...message,
-    }),
-  });
+      body: JSON.stringify({
+        sender: {
+          name: "AFFARIO",
+          email: "alert@notify.affario.it",
+        },
+        to: [{ email: recipientEmail }],
+        ...message,
+      }),
+      signal: createBrevoTimeoutSignal(timeoutMilliseconds),
+    });
+  } catch (error) {
+    throw new BrevoTransactionalEmailError(
+      isTimeoutError(error) ? "TIMEOUT" : "NETWORK_ERROR"
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Brevo ha risposto con stato ${response.status}`);
+    throw new BrevoTransactionalEmailError("HTTP_ERROR", response.status);
   }
 }
 
@@ -158,6 +201,8 @@ export function createBrevoTargetEmailGateway(
   const requester = options.requester ?? fetch;
   const getApiKey = options.getApiKey ?? (() => process.env.BREVO_API_KEY);
   const clock = options.clock ?? (() => new Date());
+  const timeoutMilliseconds =
+    options.timeoutMilliseconds ?? BREVO_HTTP_TIMEOUT_MS;
 
   return {
     async sendTargetEmail(
@@ -166,7 +211,7 @@ export function createBrevoTargetEmailGateway(
       const apiKey = getApiKey();
 
       if (!apiKey) {
-        return { status: "rejected" };
+        return { status: "rejected", reason: "configuration" };
       }
 
       const message = buildTargetPriceAlertEmailMessage(alert);
@@ -193,9 +238,13 @@ export function createBrevoTargetEmailGateway(
             tags: [identity.eventTag],
             ...message,
           }),
+          signal: createBrevoTimeoutSignal(timeoutMilliseconds),
         });
-      } catch {
-        return { status: "unknown" };
+      } catch (error) {
+        return {
+          status: "unknown",
+          reason: isTimeoutError(error) ? "timeout" : "network",
+        };
       }
 
       if (response.ok) {
@@ -209,8 +258,8 @@ export function createBrevoTargetEmailGateway(
       }
 
       return response.status >= 500
-        ? { status: "unknown" }
-        : { status: "rejected" };
+        ? { status: "unknown", reason: "provider" }
+        : { status: "rejected", reason: "provider" };
     },
 
     async getTargetEmailEventStatus(
@@ -256,6 +305,7 @@ export function createBrevoTargetEmailGateway(
             Accept: "application/json",
             "api-key": apiKey,
           },
+          signal: createBrevoTimeoutSignal(timeoutMilliseconds),
         });
       } catch {
         return "unknown";
@@ -301,7 +351,8 @@ export async function sendAlertConfirmationEmail(
     alert.recipientEmail,
     message,
     fetch,
-    apiKey
+    apiKey,
+    BREVO_HTTP_TIMEOUT_MS
   );
 }
 

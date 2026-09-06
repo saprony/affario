@@ -65,9 +65,19 @@ export default function PrivacyPage() {
               <li>indirizzo email;</li>
               <li>prodotto monitorato;</li>
               <li>prezzo desiderato;</li>
-              <li>prezzo del prodotto al momento dell&apos;attivazione;</li>
-              <li>data e stato dell&apos;alert.</li>
+              <li>prezzo del prodotto al momento della richiesta;</li>
+              <li>date e stato operativo dell&apos;alert;</li>
+              <li>
+                prezzo e data rilevati quando viene raggiunto il target, se
+                applicabile.
+              </li>
             </ul>
+            <p>
+              La richiesta è inizialmente in attesa di conferma, diventa attiva
+              soltanto dopo la conferma esplicita dell&apos;utente e passa allo
+              stato finale quando la notifica di raggiungimento del target è
+              stata completata.
+            </p>
             <p>
               I fornitori tecnici utilizzati per l&apos;erogazione del servizio
               possono inoltre trattare dati tecnici strettamente necessari al
@@ -82,8 +92,10 @@ export default function PrivacyPage() {
               <li>creare e gestire l&apos;alert prezzo richiesto dall&apos;utente;</li>
               <li>identificare il prodotto e la soglia di prezzo scelta;</li>
               <li>
-                inviare, quando il sistema di notifiche sarà operativo,
-                comunicazioni strettamente relative all&apos;alert richiesto;
+                inviare l&apos;email di conferma della richiesta; il servizio
+                include inoltre l&apos;email di raggiungimento del prezzo obiettivo
+                per gli alert attivi, utilizzata quando il monitoraggio
+                automatico è attivo;
               </li>
               <li>
                 garantire sicurezza e corretto funzionamento tecnico del
@@ -118,11 +130,13 @@ export default function PrivacyPage() {
           <section className={sectionClassName}>
             <h2 className={headingClassName}>Conservazione</h2>
             <p>
-              I dati sono conservati per il tempo necessario a mantenere attivo
-              e gestire l&apos;alert richiesto e vengono eliminati quando non sono
-              più necessari alla finalità per cui sono stati raccolti, salvo
-              eventuali obblighi di legge. L&apos;utente può richiederne la
-              cancellazione contattando il Titolare.
+              I dati sono conservati per il tempo necessario a gestire
+              l&apos;alert, proteggerne la sicurezza, evitare invii duplicati e
+              verificare l&apos;esito del servizio. Non è attualmente definito un
+              termine di conservazione fisso. L&apos;utente può eliminare
+              l&apos;alert tramite il proprio link personale oppure richiederne la
+              cancellazione contattando il Titolare, salvo eventuali obblighi
+              di legge.
             </p>
           </section>
 
@@ -131,10 +145,13 @@ export default function PrivacyPage() {
               Destinatari e fornitori tecnici
             </h2>
             <p>
-              I dati possono essere trattati da fornitori tecnici necessari
-              all&apos;erogazione del servizio, quali servizi di hosting, database
-              e, quando attivato, invio email, che operano secondo i rispettivi
-              ruoli e obblighi applicabili in materia di protezione dei dati.
+              I dati necessari possono essere trattati dai fornitori tecnici
+              del servizio: Vercel per l&apos;hosting, Supabase per il database e
+              Brevo per l&apos;invio delle email transazionali. Keepa fornisce ad
+              AFFARIO dati di prodotto e di prezzo e non riceve da AFFARIO
+              l&apos;indirizzo email associato all&apos;alert. Se l&apos;utente apre
+              volontariamente un link Amazon, il successivo trattamento è
+              regolato anche dall&apos;informativa del servizio Amazon.
             </p>
           </section>
 
@@ -194,7 +211,7 @@ export default function PrivacyPage() {
 
           <section className={sectionClassName}>
             <h2 className={headingClassName}>Aggiornamenti</h2>
-            <p>Ultimo aggiornamento: 11 agosto 2026</p>
+            <p>Ultimo aggiornamento: 6 settembre 2026</p>
           </section>
         </div>
       </article>

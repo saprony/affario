@@ -11,6 +11,10 @@ export type TargetPriceAlertEmailMessage = {
   textContent: string;
 };
 
+const AFFARIO_PRIVACY_URL = "https://affario.it/privacy";
+const AMAZON_ASSOCIATE_DISCLOSURE =
+  "In qualità di Affiliato Amazon io ricevo un guadagno dagli acquisti idonei.";
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -48,6 +52,7 @@ export function buildTargetPriceAlertEmailMessage({
 
   const safeProductName = escapeHtml(productName.trim());
   const safeAmazonUrl = escapeHtml(amazonUrl);
+  const safePrivacyUrl = escapeHtml(AFFARIO_PRIVACY_URL);
   const formattedCurrentPrice = formatPrice(currentPrice);
   const formattedTargetPrice = formatPrice(targetPrice);
   const saving = targetPrice - currentPrice;
@@ -100,6 +105,12 @@ export function buildTargetPriceAlertEmailMessage({
           <p style="margin:20px 0 0;font-size:13px;line-height:1.5;color:#6b7280;">
             I prezzi possono cambiare rapidamente.
           </p>
+          <p style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#4b5563;">
+            ${AMAZON_ASSOCIATE_DISCLOSURE}
+          </p>
+          <p style="margin:10px 0 0;font-size:13px;line-height:1.5;">
+            <a href="${safePrivacyUrl}" style="color:#166534;text-decoration:underline;">Informativa Privacy</a>
+          </p>
           <p style="margin:26px 0 0;border-top:1px solid #e5e7eb;padding-top:18px;font-size:12px;line-height:1.5;color:#6b7280;">
             Hai ricevuto questa email perché hai attivato questo alert prezzo su AFFARIO. Non è una newsletter né una comunicazione di marketing.
           </p>
@@ -121,6 +132,10 @@ Prezzo Obiettivo AFFARIO: ${formattedTargetPrice}${savingText}
 Vedi questa variante su Amazon: ${amazonUrl}
 
 I prezzi possono cambiare rapidamente.
+
+${AMAZON_ASSOCIATE_DISCLOSURE}
+
+Informativa Privacy: ${AFFARIO_PRIVACY_URL}
 
 Hai ricevuto questa email perché hai attivato questo alert prezzo su AFFARIO. Non è una newsletter né una comunicazione di marketing.`,
   };

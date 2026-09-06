@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 2 settembre 2026.
+Ultimo aggiornamento: 6 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -24,10 +24,11 @@ Prima di iniziare qualsiasi nuova funzione:
 ## 2. Snapshot Git verificato
 
 - Branch: `master`.
-- Commit applicativo di partenza della Funzione 038: `4116061f8b357a5905f3c9a30dc0766b931777c2` — `feat: connect product search fallback API`.
-- Ultima funzione completata: **FUNZIONE 045**, validata tecnicamente e con
-  migration remote applicate. Il job Cron resta inattivo e l'attivazione reale
-  è rinviata al go-live.
+- Commit di partenza della Funzione 047A.1:
+  `a871d4cccb85a2e8e94f2a4f33d16e5065ca0ab5`.
+- Ultima funzione completata prima della remediation: **FUNZIONE 046B2**,
+  validata localmente e con migration remota applicata. Il job Cron resta
+  inattivo e l'attivazione reale è rinviata al go-live.
 
 Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
 
@@ -245,11 +246,13 @@ Esistono già:
 - stato target;
 - orchestratore delle azioni alert.
 
-Non esistono ancora come flusso operativo completo:
+Sono implementati ma intenzionalmente inattivi fino al go-live autorizzato:
 
-- monitoraggio automatico reale;
-- invio reale delle notifiche intermedie e target;
-- scheduler.
+- motore di monitoraggio automatico e relativo endpoint interno;
+- scheduler Supabase Cron, installato con `active=false`;
+- invio one-shot dell'email target con idempotenza e recovery provider.
+
+Non è ancora implementato l'invio reale delle notifiche intermedie.
 
 ## 7. Decisioni definitive da preservare
 
@@ -269,7 +272,9 @@ Non esistono ancora come flusso operativo completo:
 - `lastBuyBoxUpdate` non governa il TTL.
 - Cache hit: zero chiamate Keepa e zero token.
 - Se Keepa restituisce una Buy Box più vecchia del TTL, il nuovo `requested_at` rende comunque valida la cache; nessun secondo refresh immediato.
-- Non esiste ancora un lock distribuito cross-instance.
+- Il monitoring e il refresh Keepa per exact ASIN usano lease Postgres
+  distribuite e recuperabili dopo scadenza; una cache hit fresca non consuma
+  RPC di lock.
 
 ### 7.3 Storico e normalizzazione
 
@@ -384,8 +389,11 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 043 | **COMPLETATA** — alert reale email-only sull'exact ASIN con target server-side, stato iniziale `pending_confirmation` e conferma POST esplicita prima dello stato `active`; scheduler/motore automatico fuori scope |
 | 044 | **COMPLETATA** — motore target provider-agnostic aggregato per exact ASIN, ciclo `active` → `notifying_target` → `target_notified`, claim atomica recuperabile, idempotenza provider e outcome write-once `target_reached_at`/`target_reached_price`; record storico conservato, scheduler/cron concreto e intermediate reale fuori scope |
 | 045 | **COMPLETATA** — endpoint POST interno protetto e kill switch fail-closed; Supabase Cron orario applicato ma inattivo; frequenze effettive 24h/12h/6h/2h, massimo 5 ASIN/run configurabile, fairness, priorità Keepa interactive, riserva background configurabile con default 120, telemetria bucket passiva, 429 distinti, background fail-closed, bootstrap/lease recuperabili e `backgroundDeferredForRunLimit` |
+| 046B1 | **COMPLETATA** — rate limit distribuito HMAC multi-quota e hardening RLS/ACL di `price_alerts` |
+| 046B2 | **COMPLETATA** — lease distribuite per monitoring e refresh exact ASIN, timeout Keepa e hard cap batch |
+| 047A.1 | **IN REVIEW / PARZIALE** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` preparata ma non applicata, gate `supabase_admin` aperto |
 
-Totale associazioni registrate: **37**.
+Totale associazioni registrate: **40**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -566,10 +574,21 @@ nel repository.
   state ristrette dalla migration B1 senza modificare dati, colonne o indici:
   accesso diretto rimosso a `anon`/`authenticated` e soli privilegi
   `SELECT`, `INSERT`, `UPDATE`, `DELETE` a `service_role`.
-- Default privileges dello schema public risultano permissive per
-  anon/authenticated su future tables/sequences/functions. Richiede
-  audit/hardening dedicato prima del go-live; non modificato in 046B1 per
-  evitare regressioni globali Supabase.
+- L'audit aveva rilevato default privileges permissivi nello schema `public`
+  per oggetti futuri creati da `postgres` e `supabase_admin`. La sessione usata
+  dal normale workflow migration remoto opera con `current_user = postgres` e
+  `session_user = postgres`: il ruolo non è superuser, ha `CREATEROLE`, ma non è
+  membro di `supabase_admin`, non ha `USAGE` sul ruolo e non può eseguire
+  `SET ROLE supabase_admin`. Di conseguenza la migration
+  `20260906000000_harden_public_default_privileges.sql` gestisce soltanto i
+  default ACL del creator role `postgres`: revoca ad `anon`/`authenticated` i
+  privilegi sulle future tables, sequences e functions e revoca a `PUBLIC`
+  quelli sulle future functions. È preparata localmente ma non applicata né
+  verificata sul database remoto e non modifica ACL di oggetti esistenti. I
+  default ACL del creator role `supabase_admin` non sono modificabili dal
+  normale ruolo migration e restano un gate pre-go-live separato, da chiudere
+  tramite un percorso Supabase autorizzato. Il finding 047A-004 resta quindi
+  **PARTIAL / OPEN GATE**.
 - Le due migration B1 sono applicate e allineate nella history remota: stato/RPC
   del rate limiter e hardening RLS/privilegi di `price_alerts`. Il dry-run
   successivo è pulito, le 6 righe alert sono invariate e la tabella anti-abuso
@@ -595,6 +614,26 @@ nel repository.
   allineata nella history remota; tabella e RPC restano accessibili soltanto al
   ruolo server `service_role` con i privilegi minimi previsti.
 
+### 12.4 FUNZIONE 047A.1 IN REVIEW / PARZIALE
+
+- Il GET della pagina personale di gestione riusa le policy distribuite B1:
+  20 richieste ogni 5 minuti per client e 10 ogni 5 minuti per token, consumate
+  insieme con una sola RPC. Token e IP restano pseudonimizzati con HMAC e domini
+  distinti; in Production l'assenza di identità o store produce un esito
+  consumer-safe fail-closed prima della lettura alert.
+- Le chiamate Brevo di invio e recovery usano un timeout nativo bounded di 10
+  secondi. I timeout restano esiti ambigui recuperabili e sono distinti dalle
+  risposte HTTP del provider, senza cambiare idempotenza o lifecycle.
+- L'email target include disclosure Amazon e link Privacy in HTML e plain
+  text. La Privacy descrive conferma, target, lifecycle e conservazione reali.
+- Sono disponibili gli script ufficiali `npm test` e `npm run typecheck` senza
+  nuove dipendenze; il runner richiede Node.js 22.18.0 o successivo, seleziona
+  soltanto test AFFARIO tracciati da Git e ignora ogni segmento `node_modules`.
+- La migration dei default ACL di `postgres` resta intenzionalmente non
+  applicata e non verificata sul remoto in questa funzione. Il gate separato
+  relativo al creator role `supabase_admin` resta aperto; perciò la 047A.1 non
+  è ancora completata.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -602,13 +641,18 @@ La V1 pre-lancio deve restare stretta. Sono necessari:
 1. chiudere il gate Amazon prima di pubblicare le funzionalità reali Keepa/alert su `affario.it`;
 2. collegare il flusso UI pubblico alle API reali di ricerca e lookup, preservando famiglia → variante → ASIN;
 3. collegare il motore AFFARIO ai dati reali senza inventare l'algoritmo definitivo dello Score;
-4. rendere operativo il ciclo alert reale: monitoraggio, scheduler e invio intermedio/target;
+4. attivare monitoraggio e scheduler soltanto dopo autorizzazione e completare
+   l'invio intermedio se confermato nel perimetro V1; l'invio target è già
+   implementato;
 5. garantire che ogni controllo sia aggregato per ASIN e rispetti cache/capacità Keepa;
-6. completare hardening, verifica segreti, gestione errori e test mobile/desktop;
+6. completare hardening, verifica segreti, gestione errori e test
+   mobile/desktop; chiudere il gate dei default ACL di `supabase_admin` tramite
+   un percorso Supabase autorizzato prima del go-live;
 7. verificare CTA e URL Amazon ufficiali nel perimetro autorizzato;
 8. eseguire deploy e smoke test soltanto con autorizzazione esplicita.
 9. definire e automatizzare una policy di scadenza/pulizia dei
-   `pending_confirmation` mai confermati, indicativamente dopo 48–72 ore; il
+   `pending_confirmation` mai confermati, senza assumere una durata non ancora
+   approvata; il
    calcolo dovrà partire dalla creazione originaria registrata in `created_at`,
    non dai resend registrati in `confirmation_requested_at`; il
    raggiungimento del target non deve invece cancellare il record storico,
@@ -654,8 +698,8 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Ultima funzione completata: **046B2**, validata localmente e con migration
-  remota applicata; cron installato ma inattivo.
-- Nessuna funzione successiva è avviata.
+- Funzione corrente: **047A.1 IN REVIEW / PARZIALE**. La migration dei default
+  ACL di `postgres` non è applicata né verificata sul remoto e il gate separato
+  `supabase_admin` resta aperto; cron e monitoring restano inattivi.
 
 `PublicHome`, deploy e funzioni successive restano invariati.

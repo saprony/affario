@@ -20,6 +20,22 @@ test("email target distinta con prodotto, prezzi, CTA exact ASIN e nota", () => 
   assert.match(message.htmlContent, /Prezzo Obiettivo AFFARIO/);
   assert.match(message.htmlContent, /Differenza sotto il target/);
   assert.ok(message.htmlContent.includes(amazonUrl.replaceAll("&", "&amp;")));
+  assert.match(
+    message.htmlContent,
+    /In qualità di Affiliato Amazon io ricevo un guadagno dagli acquisti idonei\./
+  );
+  assert.match(
+    message.textContent,
+    /In qualità di Affiliato Amazon io ricevo un guadagno dagli acquisti idonei\./
+  );
+  assert.match(
+    message.htmlContent,
+    /href="https:\/\/affario\.it\/privacy"[^>]*>Informativa Privacy<\/a>/
+  );
+  assert.match(
+    message.textContent,
+    /Informativa Privacy: https:\/\/affario\.it\/privacy/
+  );
   assert.match(message.textContent, /I prezzi possono cambiare rapidamente/);
   assert.doesNotMatch(message.textContent, /disponibil/i);
   assert.doesNotMatch(message.textContent, /conferma/i);

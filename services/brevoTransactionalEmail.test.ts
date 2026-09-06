@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  BREVO_HTTP_TIMEOUT_MS,
   createBrevoTargetEmailGateway,
   getTargetEmailProviderIdentity,
   type TargetPriceAlertEmail,
@@ -32,8 +33,11 @@ test("stesso alert target produce UUID e tag stabili senza PII", () => {
 
 test("retry usa la stessa Idempotency-Key Brevo e alert diversi chiavi diverse", async () => {
   const bodies: Array<Record<string, unknown>> = [];
+  const signals: AbortSignal[] = [];
   const requester = (async (_input, init) => {
     bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    assert.ok(init?.signal instanceof AbortSignal);
+    signals.push(init.signal);
     return Response.json({ messageId: "provider-message" }, { status: 201 });
   }) as typeof fetch;
   const gateway = createBrevoTargetEmailGateway({
@@ -59,6 +63,8 @@ test("retry usa la stessa Idempotency-Key Brevo e alert diversi chiavi diverse",
     otherHeaders["Idempotency-Key"]
   );
   assert.deepEqual(firstTags, [getTargetEmailProviderIdentity(42).eventTag]);
+  assert.equal(signals.length, 3);
+  assert.equal(BREVO_HTTP_TIMEOUT_MS, 10_000);
 });
 
 test("Brevo distingue accepted, rejected e stato ambiguo", async () => {
@@ -81,20 +87,53 @@ test("Brevo distingue accepted, rejected e stato ambiguo", async () => {
   });
   assert.deepEqual(await gateway.sendTargetEmail(TARGET_EMAIL), {
     status: "rejected",
+    reason: "provider",
   });
   assert.deepEqual(await gateway.sendTargetEmail(TARGET_EMAIL), {
     status: "unknown",
+    reason: "provider",
   });
   assert.deepEqual(await gateway.sendTargetEmail(TARGET_EMAIL), {
     status: "accepted",
   });
 });
 
+test("un timeout Brevo resta ambiguo e distinto da un errore HTTP", async () => {
+  const requester = (async (_input, init) => {
+    const signal = init?.signal;
+    assert.ok(signal instanceof AbortSignal);
+
+    return await new Promise<Response>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), {
+        once: true,
+      });
+    });
+  }) as typeof fetch;
+  const gateway = createBrevoTargetEmailGateway({
+    requester,
+    getApiKey: () => "test-api-key",
+    timeoutMilliseconds: 5,
+  });
+  const keepEventLoopAlive = setTimeout(() => undefined, 100);
+
+  try {
+    assert.deepEqual(await gateway.sendTargetEmail(TARGET_EMAIL), {
+      status: "unknown",
+      reason: "timeout",
+    });
+  } finally {
+    clearTimeout(keepEventLoopAlive);
+  }
+});
+
 test("recovery interroga gli eventi soltanto tramite tag stabile", async () => {
   const requestedUrls: URL[] = [];
+  const signals: AbortSignal[] = [];
   const identity = getTargetEmailProviderIdentity(42);
-  const requester = (async (input) => {
+  const requester = (async (input, init) => {
     requestedUrls.push(new URL(String(input)));
+    assert.ok(init?.signal instanceof AbortSignal);
+    signals.push(init.signal);
     return Response.json({
       events: [{ event: "request", tag: identity.eventTag }],
     });
@@ -118,6 +157,7 @@ test("recovery interroga gli eventi soltanto tramite tag stabile", async () => {
     JSON.stringify([identity.eventTag])
   );
   assert.equal(requestedUrl?.searchParams.has("email"), false);
+  assert.equal(signals.length, 1);
 });
 
 test("recovery senza eventi permette retry, risposta incerta lo blocca", async () => {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import ConfirmAlertButton from "@/components/ConfirmAlertButton";
 import DeleteAlertButton from "@/components/DeleteAlertButton";
@@ -7,15 +8,8 @@ import {
   PRICE_ALERT_PENDING_STATUS,
   PRICE_ALERT_TARGET_NOTIFIED_STATUS,
 } from "@/lib/affarioPriceAlert";
-import {
-  hashAlertManagementToken,
-  isValidAlertManagementToken,
-} from "@/lib/alertManagementToken";
-import {
-  readPriceAlertByToken,
-  type ManagedPriceAlert,
-} from "@/lib/priceAlertManagement";
-import { priceAlertManagementStore } from "@/services/priceAlertManagementStore";
+import type { ManagedPriceAlert } from "@/lib/priceAlertManagement";
+import { getPriceAlertManagementPageAccess } from "@/services/priceAlertManagementPageAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -79,26 +73,44 @@ function AlertNotFound() {
   );
 }
 
-async function findAlert(token: string): Promise<ManagedPriceAlert | null> {
-  try {
-    return await readPriceAlertByToken(
-      token,
-      {
-        isValid: isValidAlertManagementToken,
-        hash: hashAlertManagementToken,
-      },
-      priceAlertManagementStore
-    );
-  } catch {
-    return null;
+function AlertAccessFailure({ rateLimited }: { rateLimited: boolean }) {
+  return (
+    <>
+      <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+        Gestisci alert
+      </h1>
+      <p className="mt-6 rounded-2xl bg-gray-100 p-5 font-bold text-gray-800">
+        {rateLimited
+          ? "Hai effettuato troppe richieste. Attendi qualche minuto e riprova."
+          : "Il servizio non è temporaneamente disponibile. Riprova più tardi."}
+      </p>
+    </>
+  );
+}
+
+async function createManagementPageRequest(): Promise<Request> {
+  const requestHeaders = await headers();
+  const forwardedFor = requestHeaders.get("x-forwarded-for");
+  const rateLimitHeaders = new Headers();
+
+  if (forwardedFor) {
+    rateLimitHeaders.set("x-forwarded-for", forwardedFor);
   }
+
+  return new Request("https://affario.it/alert", {
+    headers: rateLimitHeaders,
+  });
 }
 
 export default async function AlertManagementPage({
   params,
 }: AlertManagementPageProps) {
   const { token } = await params;
-  const alert = await findAlert(token);
+  const access = await getPriceAlertManagementPageAccess(
+    await createManagementPageRequest(),
+    token
+  );
+  const alert = access.status === "found" ? access.alert : null;
   const isPending = alert?.status === PRICE_ALERT_PENDING_STATUS;
   const isActive = alert?.status === PRICE_ALERT_ACTIVE_STATUS;
   const isTargetNotified =
@@ -107,7 +119,11 @@ export default async function AlertManagementPage({
   return (
     <main className="flex flex-1 items-center bg-slate-50 px-4 py-10 text-gray-900 sm:py-14">
       <section className="mx-auto w-full max-w-xl rounded-3xl bg-white p-6 shadow-xl sm:p-10">
-        {!alert || (!isPending && !isActive && !isTargetNotified) ? (
+        {access.status === "rate-limited" ? (
+          <AlertAccessFailure rateLimited />
+        ) : access.status === "unavailable" ? (
+          <AlertAccessFailure rateLimited={false} />
+        ) : !alert || (!isPending && !isActive && !isTargetNotified) ? (
           <AlertNotFound />
         ) : isPending ? (
           <>

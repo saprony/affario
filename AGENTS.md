@@ -212,27 +212,34 @@ Non inventare o sostituire autonomamente l'algoritmo definitivo dell'Affario Sco
 
 Regola attuale:
 
-Il prezzo obiettivo parte dal prezzo minimo degli ultimi 90 giorni.
+Il Prezzo Obiettivo AFFARIO è il 25° percentile della Buy Box degli ultimi 90
+giorni, ponderato per la durata dei prezzi osservati.
 
-Margine prudenziale:
+Il calcolo ricostruisce lo stato Buy Box al cutoff dei 90 giorni. I periodi in
+cui la Buy Box non è disponibile restano nella timeline, ma non entrano nella
+distribuzione dei prezzi.
 
-- minimo <= 100 € → +10%
-- minimo da 101 € a 500 € → +5%
-- minimo > 500 € → +3%
+La qualità minima richiede:
 
-Il risultato viene arrotondato al multiplo di 5 € più vicino.
+- stato Buy Box disponibile al cutoff;
+- serie non troncata;
+- almeno 4 osservazioni valide;
+- almeno 7 giorni di copertura temporale;
+- almeno 7 giorni complessivi con Buy Box valida.
+
+Il Prezzo Obiettivo viene arrotondato al multiplo di 5 € più vicino soltanto
+dopo il calcolo statistico.
 
 Risparmio Potenziale:
 
 prezzo attuale - prezzo obiettivo Affario.
 
-Se il risultato è minore o uguale a zero, non mostrare "0 €".
+Il Risparmio Potenziale è mostrato soltanto quando il risultato è positivo. Se
+il prezzo attuale è minore o uguale al target, lo stato è `NOT_APPLICABLE` e
+non vengono mostrati né "0 €" né un Prezzo Obiettivo consumer.
 
-Mostrare:
-
-"AFFARIO non prevede ribassi di prezzo nei prossimi 30 giorni."
-
-Non mostrare all'utente il margine prudenziale.
+Prezzo Obiettivo e Risparmio Potenziale descrivono lo storico osservato: non
+sono previsioni temporali né promesse di raggiungimento.
 
 
 ## 12. Fasce Affario Score

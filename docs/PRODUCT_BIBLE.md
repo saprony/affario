@@ -47,30 +47,33 @@ Le ottimizzazioni UX saranno implementate dopo la V1.
 
 ## DD-001 - Risparmio Potenziale
 
-Il Risparmio Potenziale viene calcolato confrontando:
+Il Prezzo Obiettivo AFFARIO è il 25° percentile della Buy Box degli ultimi 90
+giorni, ponderato per la durata dei prezzi osservati.
 
-- prezzo attuale
-- prezzo minimo degli ultimi 90 giorni
+Il calcolo ricostruisce lo stato Buy Box al cutoff dei 90 giorni. I periodi in
+cui la Buy Box non è disponibile non entrano nella distribuzione dei prezzi.
 
-Margine di prudenza:
+La qualità minima richiede:
 
-- fino a 100 € → 10%
-- da 101 € a 500 € → 5%
-- oltre 500 € → 3%
+- stato Buy Box disponibile al cutoff;
+- serie non troncata;
+- almeno 4 osservazioni valide;
+- almeno 7 giorni di copertura temporale;
+- almeno 7 giorni complessivi con Buy Box valida.
 
-Il margine NON viene mostrato all'utente.
+Il Prezzo Obiettivo viene arrotondato ai 5 € soltanto dopo il calcolo
+statistico.
 
-Il Risparmio Potenziale viene arrotondato ai 5 €.
+Il Risparmio Potenziale è:
 
-Se il Risparmio Potenziale è minore o uguale a zero:
+prezzo attuale - Prezzo Obiettivo AFFARIO.
 
-NON mostrare:
+Viene mostrato soltanto se positivo ed è arrotondato ai 5 €. Se il prezzo
+attuale è minore o uguale al target, lo stato è `NOT_APPLICABLE` e non vengono
+mostrati né "0 €" né un Prezzo Obiettivo consumer.
 
-0 €
-
-Mostrare invece:
-
-"AFFARIO non prevede ribassi di prezzo nei prossimi 30 giorni."
+Prezzo Obiettivo e Risparmio Potenziale descrivono lo storico osservato: non
+sono previsioni temporali né promesse di raggiungimento.
 
 ---
 
