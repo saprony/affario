@@ -410,8 +410,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047A.1 | **IMPLEMENTAZIONE TECNICA COMPLETATA / GATE ESTERNO APERTO** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` applicata e verificata, gate `supabase_admin` aperto pre-go-live |
 | 047A.2 | **COMPLETATA E VERIFICATA IN PRODUCTION** — finding 047A-003 corretto con scheduling snapshot batch tramite RPC POST server-only; migration e RPC applicate e allineate, deploy `Ready`, smoke Production 5/5 PASS; monitoring e Cron restano inattivi |
 | 047A.4 / 047A.4B | **DECISIONE QA REGISTRATA** — 047A-010 chiuso/non applicabile; 047A-013 confermato e rinviato post-go-live/V1.1 con design indicizzato definito ma non implementato |
+| 047A.5 | **COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS** — 047A-014/015/016 chiusi; titoli alert user-facing abbreviati, copy 429/503 uniformate, affiliate footer rifinito e preview protette in Production |
 
-Totale associazioni registrate: **42**.
+Totale associazioni registrate: **43**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -849,6 +850,77 @@ Il rollout futuro previsto è:
 - Monitoring e Cron restano OFF. Non sono state create migration, eseguite
   query remote o apportate modifiche al database.
 
+### 12.8 FUNZIONE 047A.5 — ALERT UX E QA
+
+#### 047A-014 / 047A-015 — TITOLI AMAZON TROPPO LUNGHI
+
+- Stato: **CLOSED**.
+- Il titolo Amazon raw veniva salvato integralmente e mostrato direttamente
+  nelle email e nelle pagine alert.
+- La soluzione usa l'utility condivisa `lib/userFacingProductTitle.ts`.
+- La regola user-facing normalizza il whitespace, limita il titolo a 56
+  caratteri inclusa l'ellissi, tronca su parola intera, aggiunge l'ellissi
+  soltanto quando il titolo viene troncato e usa il fallback
+  `Prodotto selezionato`.
+- Database, ranking e monitoring restano invariati.
+- Sono state aggiornate l'email di conferma alert, l'email di target raggiunto,
+  la pagina di conferma/gestione alert e gli stati alert user-facing. I subject
+  email sono stati verificati entro limiti ragionevoli.
+- QA visuale: desktop PASS, 320 px PASS e 390 px PASS; nessun overflow
+  orizzontale, titolo riconoscibile, prezzi e CTA leggibili.
+
+#### 047A-016 — 429 / 503 GENERICI
+
+- Stato: **CLOSED**.
+- Copy 429: “Hai effettuato troppe richieste in poco tempo. Riprova tra qualche
+  minuto.”
+- Copy 503: “Il servizio è temporaneamente non disponibile. Riprova tra poco.”
+- Gli status HTTP restano invariati: 429 = Too Many Requests; 503 = Service
+  Unavailable.
+- Nessun dettaglio tecnico, provider o ambiente viene esposto.
+- Le superfici aggiornate sono ricerca, analisi prodotto, creazione alert,
+  conferma/gestione alert e client di conferma/eliminazione.
+
+#### Affiliate footer
+
+- La disclosure Amazon nel `RootLayout` usa 12 px, line-height 1.5, peso
+  normale e `break-words`, con contrasto invariato e link Privacy coerente.
+- Il test visuale desktop/mobile è PASS e il testo della disclosure non è
+  stato modificato.
+
+#### Preview development
+
+Le fixture:
+
+- `/alert/preview-alert`;
+- `/alert/preview-rate-limited`;
+- `/alert/preview-unavailable`.
+
+sono disponibili esclusivamente in development.
+
+Il safety check certifica:
+
+- gate server-only `NODE_ENV === "development"`;
+- uso obbligatorio del percorso reale in Production;
+- nessun bypass di database, validazione token o rate limiting in Production;
+- nessun flag client-side o query parameter pubblico;
+- nessuna variabile d'ambiente aggiuntiva;
+- un token reale omonimo non viene trattato come preview in Production.
+
+È stato aggiunto un test esplicito per questa garanzia.
+
+#### Validazione
+
+- Commit di implementazione:
+  `604cefbd6c3a005bec72442cf0008ae221ed5603`
+  (`fix: improve alert ux and consumer errors`).
+- `git diff --check` PASS; lint PASS; typecheck PASS; 243/243 test PASS; build
+  PASS; `npm audit` PASS con zero vulnerabilità.
+- Monitoring e Cron restano OFF. Durante la funzione non sono state eseguite
+  chiamate remote.
+- Stato finale: **047A-014 CLOSED**; **047A-015 CLOSED**; **047A-016 CLOSED**;
+  **047A.5 COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS**.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -928,6 +1000,10 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 047A.5 è completata e validata localmente con manual QA PASS**
+  nel commit `604cefbd6c3a005bec72442cf0008ae221ed5603`: 047A-014, 047A-015 e
+  047A-016 sono chiusi. Le preview alert restano fixture esclusivamente
+  development e in Production usano sempre il percorso reale.
 - La **FUNZIONE 047A.4 / 047A.4B è chiusa come decisione QA**: 047A-010 è
   `CLOSED / NOT APPLICABLE`; 047A-013 è `CONFIRMED — DEFER TO POST-GO-LIVE`,
   resta `OPEN — POST-GO-LIVE / V1.1` e non costituisce un blocker V1. Il
