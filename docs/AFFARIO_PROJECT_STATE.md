@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 6 settembre 2026.
+Ultimo aggiornamento: 7 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -409,8 +409,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 046B2 | **COMPLETATA** — lease distribuite per monitoring e refresh exact ASIN, timeout Keepa e hard cap batch |
 | 047A.1 | **IMPLEMENTAZIONE TECNICA COMPLETATA / GATE ESTERNO APERTO** — remediation mirata dei finding security, compliance, timeout, script npm e documentazione; migration dei default ACL di `postgres` applicata e verificata, gate `supabase_admin` aperto pre-go-live |
 | 047A.2 | **COMPLETATA E VERIFICATA IN PRODUCTION** — finding 047A-003 corretto con scheduling snapshot batch tramite RPC POST server-only; migration e RPC applicate e allineate, deploy `Ready`, smoke Production 5/5 PASS; monitoring e Cron restano inattivi |
+| 047A.4 / 047A.4B | **DECISIONE QA REGISTRATA** — 047A-010 chiuso/non applicabile; 047A-013 confermato e rinviato post-go-live/V1.1 con design indicizzato definito ma non implementato |
 
-Totale associazioni registrate: **41**.
+Totale associazioni registrate: **42**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -770,6 +771,84 @@ nel repository.
 - Stato finale: **IMPLEMENTATA / VALIDATA LOCALMENTE / 047A-006 RISOLTO A
   LIVELLO REPOSITORY / RECOVERY REHEARSAL OPEN PRE-GO-LIVE**.
 
+### 12.7 FUNZIONE 047A.4 / 047A.4B — DECISIONE FINALE SEARCH PERFORMANCE
+
+#### 047A-010 — VARIANT N+1
+
+- Verdetto: **CLOSED / NOT APPLICABLE**.
+- La ricerca locale esegue due query catalogo complessive in parallelo e il
+  numero di query non cresce con il numero di famiglie.
+- Non esistono query delle varianti dentro cicli. DTO e componenti ricevono
+  già tutte le varianti.
+- `/api/products/[asin]` viene chiamato soltanto dopo una CTA esplicita
+  dell'utente e per un singolo ASIN.
+- Il finding originale 047A-010 non è quindi riproducibile nel codice
+  corrente.
+
+#### 047A-013 — LOCAL SEARCH 500 / 5000
+
+- Verdetto: **CONFIRMED — DEFER TO POST-GO-LIVE**.
+- La ricerca locale esegue due query catalogo con limite di 500 righe
+  `products` e 5.000 righe `product_variants`: fino a 5.500 righe vengono
+  caricate prima del matching/ranking in memoria. L'output è limitato a 10
+  famiglie.
+- Una semplice soluzione `ILIKE`/`LIMIT` non è equivalente. La semantica
+  corrente dipende da NFKD, rimozione dei diacritici, tokenizzazione Unicode,
+  ASIN, attributi variante, Size/Color, exact matching, prefix matching,
+  multi-token, Style split, ranking e tie-break TypeScript.
+
+#### Design futuro raccomandato
+
+L'architettura preferita post-go-live è:
+
+> TypeScript canonical normalization/tokens → `text[]` source tokens →
+> generated `tsvector` via `array_to_tsvector()` → GIN indexes → server-only
+> RPC candidate generation → hydration completa delle famiglie candidate →
+> Style split TypeScript invariato → `rankAffarioProductFamilies()` invariato
+> → top 10.
+
+La candidate generation SQL deve essere un **SUPERSET sicuro**: sono ammessi
+falsi positivi, ma non falsi negativi rispetto alla ricerca corrente. Non deve
+essere applicato alcun `LIMIT` prima del ranking finale TypeScript.
+
+Il rollout futuro previsto è:
+
+1. schema additivo nullable;
+2. dual-write;
+3. backfill;
+4. verifica `NULL = 0`;
+5. shadow comparison old/new;
+6. `EXPLAIN ANALYZE`;
+7. feature flag;
+8. canary;
+9. eventuale vincolo `NOT NULL` finale.
+
+#### Semantica prefix da decidere separatamente
+
+- Nel motore locale, `iph` da solo **non** trova `iphone`.
+- Nel motore locale, `iph 17` può trovare iPhone 17 perché esiste anche un
+  token exact che ammette la famiglia al ranking.
+- Il motore esterno supporta il prefix già nella fase di admission e può
+  trovare `iph`.
+- Questa differenza non viene modificata dalla Funzione 047A.4 e resta una
+  decisione separata per una futura revisione della semantica search.
+
+#### Decisione V1 e validazione
+
+- La nuova ricerca indicizzata non viene implementata prima del go-live:
+  il traffico iniziale è controllato, il rate limiting è già attivo e la
+  qualità dei risultati ha priorità. La soluzione richiede migration,
+  backfill, RPC e un nuovo percorso di ricerca; catalogo reale e piani SQL non
+  sono ancora verificati e superare i limiti 500/5.000 potrebbe modificare il
+  top 10 osservabile.
+- Stato finale: **047A-010 CLOSED**; **047A-013 OPEN — POST-GO-LIVE / V1.1**.
+  047A-013 non è un blocker V1.
+- La Funzione 047A.4B non ha modificato file permanenti. Il gate iniziale era
+  pulito con `HEAD = origin/master =
+  849e7f9a8c8c041faed06f389a9dc29b94b57967`.
+- Monitoring e Cron restano OFF. Non sono state create migration, eseguite
+  query remote o apportate modifiche al database.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -842,9 +921,17 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - La Funzione 047A.3 ha risolto 047A-006 a livello repository introducendo la
   baseline V1 separata; resta aperto pre-go-live il recovery rehearsal
   integrale su database disposable.
+- Il finding 047A-010 è chiuso/non applicabile. Il finding 047A-013 resta
+  aperto post-go-live/V1.1 e non blocca la V1; la differenza tra prefix
+  matching locale ed esterno richiede una decisione separata prima della
+  futura implementazione della ricerca indicizzata.
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 047A.4 / 047A.4B è chiusa come decisione QA**: 047A-010 è
+  `CLOSED / NOT APPLICABLE`; 047A-013 è `CONFIRMED — DEFER TO POST-GO-LIVE`,
+  resta `OPEN — POST-GO-LIVE / V1.1` e non costituisce un blocker V1. Il
+  design indicizzato è documentato ma non implementato.
 - La **FUNZIONE 047A.3 è implementata e validata localmente** nel commit
   `f7f786ce3af7e1dd82f48c5619f03866e2150d59`; 047A-006 è risolto a livello
   repository. Prima del go-live operativo resta da eseguire il recovery
