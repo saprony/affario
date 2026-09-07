@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
+import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
 import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
 import {
   ABUSE_RATE_LIMIT_POLICIES,
@@ -129,14 +130,14 @@ function mapError(error: unknown): NextResponse<AffarioProductApiErrorResponse> 
     if (error.code === "INVALID_RESPONSE") {
       return errorResponse(
         "UPSTREAM_UNAVAILABLE",
-        "Il servizio prodotto non e temporaneamente disponibile.",
+        SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
         502
       );
     }
 
     return errorResponse(
       "UPSTREAM_UNAVAILABLE",
-      "Il servizio prodotto non e temporaneamente disponibile.",
+      SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
       503
     );
   }
@@ -144,7 +145,7 @@ function mapError(error: unknown): NextResponse<AffarioProductApiErrorResponse> 
   if (error instanceof AffarioProductLookupError) {
     return errorResponse(
       "UPSTREAM_UNAVAILABLE",
-      "Il servizio prodotto non e temporaneamente disponibile.",
+      SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
       503
     );
   }

@@ -4,6 +4,11 @@ import test from "node:test";
 import { normalizePriceAlertEmail } from "../lib/affarioPriceAlert";
 import { createAbuseRateLimitFailureResponse } from "../lib/abuseRateLimitResponse";
 import {
+  getConsumerServiceErrorMessage,
+  SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+  TOO_MANY_REQUESTS_MESSAGE,
+} from "../lib/consumerServiceMessages";
+import {
   ABUSE_RATE_LIMIT_HMAC_MIN_BYTES,
   ABUSE_RATE_LIMIT_POLICIES,
   createAbuseRateLimitExecutor,
@@ -737,9 +742,16 @@ test("429 e 503 sono sanitizzati e non memorizzabili", async () => {
   );
   assert.equal(limitedResponse.headers.get("pragma"), "no-cache");
   assert.equal(limitedResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(JSON.parse(limitedBody), {
+    error: { code: "RATE_LIMITED", message: TOO_MANY_REQUESTS_MESSAGE },
+  });
+  assert.equal(
+    getConsumerServiceErrorMessage(limitedResponse.status),
+    TOO_MANY_REQUESTS_MESSAGE
+  );
   assert.doesNotMatch(
     limitedBody,
-    /supabase|keepa|brevo|rpc|digest|email|192\.0\.2/i
+    /supabase|keepa|brevo|rpc|digest|email|secret|env|internal|192\.0\.2/i
   );
 
   const unavailableResponse = createAbuseRateLimitFailureResponse({
@@ -749,8 +761,18 @@ test("429 e 503 sono sanitizzati e non memorizzabili", async () => {
 
   assert.equal(unavailableResponse.status, 503);
   assert.equal(unavailableResponse.headers.get("retry-after"), null);
+  assert.deepEqual(JSON.parse(unavailableBody), {
+    error: {
+      code: "SERVICE_UNAVAILABLE",
+      message: SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+    },
+  });
+  assert.equal(
+    getConsumerServiceErrorMessage(unavailableResponse.status),
+    SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE
+  );
   assert.doesNotMatch(
     unavailableBody,
-    /supabase|keepa|brevo|rpc|digest|email|secret/i
+    /supabase|keepa|brevo|rpc|digest|email|secret|env|internal/i
   );
 });

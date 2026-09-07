@@ -3,7 +3,10 @@ import test from "node:test";
 
 import type { ManagedPriceAlert } from "../lib/priceAlertManagement";
 import { ABUSE_RATE_LIMIT_POLICIES } from "./abuseRateLimit";
-import { createPriceAlertManagementPageAccess } from "./priceAlertManagementPageAccess";
+import {
+  createPriceAlertManagementPageAccess,
+  createPriceAlertManagementPageAccessWithDevelopmentPreviews,
+} from "./priceAlertManagementPageAccess";
 
 const VALID_TOKEN = Buffer.alloc(32, 9).toString("base64url");
 const ALERT: ManagedPriceAlert = {
@@ -18,6 +21,64 @@ function requestFor(ip = "192.0.2.70"): Request {
     headers: { "x-forwarded-for": ip },
   });
 }
+
+test("i token preview sono fixture solo in development", async () => {
+  const previewTokens = [
+    "preview-alert",
+    "preview-rate-limited",
+    "preview-unavailable",
+  ];
+  const request = requestFor();
+  const delegatedTokens: unknown[] = [];
+
+  for (const nodeEnvironment of ["production", "test", undefined]) {
+    const getAccess =
+      createPriceAlertManagementPageAccessWithDevelopmentPreviews({
+        getNodeEnvironment: () => nodeEnvironment,
+        getProductionAccess: async (delegatedRequest, token) => {
+          assert.equal(delegatedRequest, request);
+          delegatedTokens.push(token);
+          return { status: "not-found" };
+        },
+      });
+
+    for (const token of previewTokens) {
+      assert.deepEqual(await getAccess(request, token), {
+        status: "not-found",
+      });
+    }
+  }
+
+  assert.deepEqual(delegatedTokens, [
+    ...previewTokens,
+    ...previewTokens,
+    ...previewTokens,
+  ]);
+
+  let developmentDelegations = 0;
+  const getDevelopmentAccess =
+    createPriceAlertManagementPageAccessWithDevelopmentPreviews({
+      getNodeEnvironment: () => "development",
+      getProductionAccess: async () => {
+        developmentDelegations += 1;
+        return { status: "not-found" };
+      },
+    });
+
+  assert.equal(
+    (await getDevelopmentAccess(request, "preview-alert")).status,
+    "found"
+  );
+  assert.deepEqual(
+    await getDevelopmentAccess(request, "preview-rate-limited"),
+    { status: "rate-limited" }
+  );
+  assert.deepEqual(
+    await getDevelopmentAccess(request, "preview-unavailable"),
+    { status: "unavailable" }
+  );
+  assert.equal(developmentDelegations, 0);
+});
 
 test("un token sintatticamente invalido non consuma quota ne legge lo store", async () => {
   let executorCalls = 0;

@@ -1,3 +1,5 @@
+import { formatUserFacingProductTitle } from "./userFacingProductTitle";
+
 export type AlertConfirmationEmailDetails = {
   productName: string;
   currentPrice: number;
@@ -33,13 +35,14 @@ export function buildAlertConfirmationEmailMessage({
   targetPrice,
   confirmationUrl,
 }: AlertConfirmationEmailDetails): AlertConfirmationEmailMessage {
-  const safeProductName = escapeHtml(productName);
+  const userFacingProductName = formatUserFacingProductTitle(productName);
+  const safeProductName = escapeHtml(userFacingProductName);
   const safeConfirmationUrl = escapeHtml(confirmationUrl);
   const formattedCurrentPrice = formatPrice(currentPrice);
   const formattedTargetPrice = formatPrice(targetPrice);
 
   return {
-    subject: `Conferma il tuo alert AFFARIO — ${productName}`,
+    subject: `Conferma il tuo alert AFFARIO — ${userFacingProductName}`,
     htmlContent: `<!doctype html>
 <html lang="it">
   <head>
@@ -100,7 +103,7 @@ Conferma il tuo alert AFFARIO
 
 Hai richiesto di essere avvisato quando questa variante raggiunge il Prezzo Obiettivo AFFARIO.
 
-Prodotto: ${productName}
+Prodotto: ${userFacingProductName}
 Prezzo al momento della richiesta: ${formatPrice(currentPrice)}
 Prezzo obiettivo AFFARIO: ${formatPrice(targetPrice)}
 

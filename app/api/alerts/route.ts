@@ -9,6 +9,7 @@ import {
   type PriceAlertPersistenceStatus,
 } from "@/lib/affarioPriceAlert";
 import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
+import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
 import {
   generateAlertManagementToken,
   hashAlertManagementToken,
@@ -207,7 +208,7 @@ async function createPriceAlert(
     ) {
       return errorResponse(
         "PRODUCT_UNAVAILABLE",
-        "Non è stato possibile verificare il prodotto. Riprova.",
+        SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
         503
       );
     }

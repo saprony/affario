@@ -325,7 +325,8 @@ test("dopo un errore rilascia il loading e consente un retry volontario", async 
       json: async () => ({
         error: {
           code: "UPSTREAM_UNAVAILABLE",
-          message: "Il servizio prodotto non è temporaneamente disponibile.",
+          message:
+            "Il servizio è temporaneamente non disponibile. Riprova tra poco.",
         },
       }),
     };
@@ -340,7 +341,7 @@ test("dopo un errore rilascia il loading e consente un retry volontario", async 
     (error: unknown) =>
       error instanceof ProductAnalysisRequestError &&
       error.message ===
-        "Il servizio prodotto non è temporaneamente disponibile."
+        "Il servizio è temporaneamente non disponibile. Riprova tra poco."
   );
 
   assert.equal(requests, 1);

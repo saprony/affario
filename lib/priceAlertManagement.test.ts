@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -119,4 +120,35 @@ test("un token invalido non legge e non muta alcun alert", async () => {
   assert.deepEqual(result, { status: "not-found" });
   assert.deepEqual(state.calls, { reads: 0, activations: 0 });
   assert.equal(state.getAlert()?.status, "pending_confirmation");
+});
+
+test("la pagina alert presenta il titolo breve senza ellissi CSS divergenti", () => {
+  const pageSource = readFileSync(
+    new URL("../app/alert/[token]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    pageSource,
+    /formatUserFacingProductTitle\(alert\.product_title\)/u
+  );
+  assert.match(pageSource, /break-words/u);
+  assert.doesNotMatch(pageSource, /line-clamp|text-ellipsis|truncate/u);
+});
+
+test("le azioni conferma ed elimina distinguono 429 e 503 nella UI", () => {
+  for (const componentPath of [
+    "../components/ConfirmAlertButton.tsx",
+    "../components/DeleteAlertButton.tsx",
+  ]) {
+    const componentSource = readFileSync(
+      new URL(componentPath, import.meta.url),
+      "utf8"
+    );
+
+    assert.match(
+      componentSource,
+      /getConsumerServiceErrorMessage\(response\.status\)/u
+    );
+  }
 });

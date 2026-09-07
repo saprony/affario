@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getConsumerServiceErrorMessage } from "@/lib/consumerServiceMessages";
 
 type ConfirmAlertButtonProps = {
   token: string;
@@ -19,9 +20,11 @@ export default function ConfirmAlertButton({
 }: ConfirmAlertButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<ConfirmationStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function confirmAlert() {
     setStatus("confirming");
+    setErrorMessage("");
 
     try {
       const response = await fetch("/api/alerts/confirm", {
@@ -36,8 +39,18 @@ export default function ConfirmAlertButton({
         return;
       }
 
-      setStatus(response.status === 404 ? "not-found" : "error");
+      if (response.status === 404) {
+        setStatus("not-found");
+        return;
+      }
+
+      setErrorMessage(
+        getConsumerServiceErrorMessage(response.status) ??
+          "Non è stato possibile confermare l'alert. Riprova."
+      );
+      setStatus("error");
     } catch {
+      setErrorMessage("Non è stato possibile confermare l'alert. Riprova.");
       setStatus("error");
     }
   }
@@ -68,7 +81,7 @@ export default function ConfirmAlertButton({
           role="alert"
           className="mb-4 rounded-xl bg-red-50 p-4 font-semibold text-red-700"
         >
-          Non è stato possibile confermare l&apos;alert. Riprova.
+          {errorMessage}
         </p>
       )}
       <button

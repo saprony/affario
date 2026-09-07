@@ -8,8 +8,15 @@ import {
   PRICE_ALERT_PENDING_STATUS,
   PRICE_ALERT_TARGET_NOTIFIED_STATUS,
 } from "@/lib/affarioPriceAlert";
+import {
+  SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+  TOO_MANY_REQUESTS_MESSAGE,
+} from "@/lib/consumerServiceMessages";
 import type { ManagedPriceAlert } from "@/lib/priceAlertManagement";
-import { getPriceAlertManagementPageAccess } from "@/services/priceAlertManagementPageAccess";
+import { formatUserFacingProductTitle } from "@/lib/userFacingProductTitle";
+import {
+  getPriceAlertManagementPageAccessWithDevelopmentPreviews,
+} from "@/services/priceAlertManagementPageAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +37,12 @@ function formatPrice(value: number): string {
 }
 
 function AlertDetails({ alert }: { alert: ManagedPriceAlert }) {
+  const productTitle = formatUserFacingProductTitle(alert.product_title);
+
   return (
     <div className="mt-8 rounded-2xl border border-gray-200 p-5">
       <p className="text-sm font-bold uppercase text-gray-500">Prodotto</p>
-      <p className="mt-2 text-xl font-bold">{alert.product_title}</p>
+      <p className="mt-2 break-words text-xl font-bold">{productTitle}</p>
 
       <dl className="mt-6 grid gap-5 sm:grid-cols-2">
         <div>
@@ -81,8 +90,8 @@ function AlertAccessFailure({ rateLimited }: { rateLimited: boolean }) {
       </h1>
       <p className="mt-6 rounded-2xl bg-gray-100 p-5 font-bold text-gray-800">
         {rateLimited
-          ? "Hai effettuato troppe richieste. Attendi qualche minuto e riprova."
-          : "Il servizio non è temporaneamente disponibile. Riprova più tardi."}
+          ? TOO_MANY_REQUESTS_MESSAGE
+          : SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE}
       </p>
     </>
   );
@@ -106,10 +115,11 @@ export default async function AlertManagementPage({
   params,
 }: AlertManagementPageProps) {
   const { token } = await params;
-  const access = await getPriceAlertManagementPageAccess(
-    await createManagementPageRequest(),
-    token
-  );
+  const access =
+    await getPriceAlertManagementPageAccessWithDevelopmentPreviews(
+      await createManagementPageRequest(),
+      token
+    );
   const alert = access.status === "found" ? access.alert : null;
   const isPending = alert?.status === PRICE_ALERT_PENDING_STATUS;
   const isActive = alert?.status === PRICE_ALERT_ACTIVE_STATUS;

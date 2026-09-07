@@ -14,6 +14,10 @@ import {
   type PriceAlertRequester,
 } from "./affarioPriceAlert";
 import type { AffarioSavingsPotential } from "../types/productAnalysis";
+import {
+  SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+  TOO_MANY_REQUESTS_MESSAGE,
+} from "./consumerServiceMessages";
 
 const availableSavings: AffarioSavingsPotential = {
   status: "AVAILABLE",
@@ -264,6 +268,27 @@ test("propaga un errore API consumer-safe", async () => {
       error instanceof PriceAlertRequestError &&
       error.message === "Non è stato possibile creare l'alert. Riprova."
   );
+});
+
+test("il client alert propaga i messaggi consumer 429 e 503", async () => {
+  for (const [code, message] of [
+    ["RATE_LIMITED", TOO_MANY_REQUESTS_MESSAGE],
+    ["SERVICE_UNAVAILABLE", SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE],
+  ] as const) {
+    await assert.rejects(
+      requestAffarioPriceAlertOnce(
+        "B0ABCDEFGH",
+        "utente@example.it",
+        { inFlight: false },
+        async () => ({
+          ok: false,
+          json: async () => ({ error: { code, message } }),
+        })
+      )!,
+      (error) =>
+        error instanceof PriceAlertRequestError && error.message === message
+    );
+  }
 });
 
 test("distingue successo con conferma email e alert duplicato", async () => {

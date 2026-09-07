@@ -1,9 +1,10 @@
 import "server-only";
 
 import type { KeepaClientError } from "@/services/keepaClient";
+import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
 
 export const TEMPORARY_PRODUCT_DATA_MESSAGE =
-  "Stiamo aggiornando i dati del prodotto. Riprova tra qualche istante.";
+  SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE;
 
 export function getKeepaRetryAfterSeconds(
   error: KeepaClientError

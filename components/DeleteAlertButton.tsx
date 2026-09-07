@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { getConsumerServiceErrorMessage } from "@/lib/consumerServiceMessages";
 
 type DeleteAlertButtonProps = {
   token: string;
@@ -11,9 +12,11 @@ type DeleteStatus = "idle" | "deleting" | "deleted" | "not-found" | "error";
 
 export default function DeleteAlertButton({ token }: DeleteAlertButtonProps) {
   const [status, setStatus] = useState<DeleteStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function deleteAlert() {
     setStatus("deleting");
+    setErrorMessage("");
 
     try {
       const response = await fetch("/api/alerts/manage", {
@@ -29,8 +32,18 @@ export default function DeleteAlertButton({ token }: DeleteAlertButtonProps) {
         return;
       }
 
-      setStatus(response.status === 404 ? "not-found" : "error");
+      if (response.status === 404) {
+        setStatus("not-found");
+        return;
+      }
+
+      setErrorMessage(
+        getConsumerServiceErrorMessage(response.status) ??
+          "Non è stato possibile eliminare l'alert. Riprova."
+      );
+      setStatus("error");
     } catch {
+      setErrorMessage("Non è stato possibile eliminare l'alert. Riprova.");
       setStatus("error");
     }
   }
@@ -81,7 +94,7 @@ export default function DeleteAlertButton({ token }: DeleteAlertButtonProps) {
           role="alert"
           className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700"
         >
-          Non è stato possibile eliminare l&apos;alert. Riprova.
+          {errorMessage}
         </p>
       )}
       <button

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PRICE_ALERT_PENDING_STATUS } from "@/lib/affarioPriceAlert";
 import {
   hashAlertManagementToken,
   isValidAlertManagementToken,
@@ -32,6 +33,34 @@ type PriceAlertManagementPageAccessDependencies = {
   isValidToken: (token: unknown) => token is string;
   executeRateLimited: RateLimitExecutor;
   readAlert: (token: string) => Promise<ManagedPriceAlert | null>;
+};
+
+type PriceAlertManagementPageAccess = (
+  request: Request,
+  token: unknown
+) => Promise<PriceAlertManagementPageAccessResult>;
+
+type DevelopmentPreviewDependencies = {
+  getNodeEnvironment: () => string | undefined;
+  getProductionAccess: PriceAlertManagementPageAccess;
+};
+
+const DEVELOPMENT_ALERT_PREVIEWS: Record<
+  string,
+  PriceAlertManagementPageAccessResult
+> = {
+  "preview-alert": {
+    status: "found",
+    alert: {
+      product_title:
+        "realme GT 8 Pro Smartphone 5G 16+512GB Snapdragon versione dimostrativa con titolo Amazon molto lungo",
+      current_price: 859.99,
+      target_price: 830,
+      status: PRICE_ALERT_PENDING_STATUS,
+    },
+  },
+  "preview-rate-limited": { status: "rate-limited" },
+  "preview-unavailable": { status: "unavailable" },
 };
 
 export function createPriceAlertManagementPageAccess(
@@ -91,4 +120,32 @@ export const getPriceAlertManagementPageAccess =
         },
         priceAlertManagementStore
       ),
+  });
+
+export function createPriceAlertManagementPageAccessWithDevelopmentPreviews(
+  dependencies: DevelopmentPreviewDependencies
+): PriceAlertManagementPageAccess {
+  return async function getPriceAlertManagementPageAccessWithDevelopmentPreviews(
+    request: Request,
+    token: unknown
+  ): Promise<PriceAlertManagementPageAccessResult> {
+    if (
+      dependencies.getNodeEnvironment() === "development" &&
+      typeof token === "string"
+    ) {
+      const preview = DEVELOPMENT_ALERT_PREVIEWS[token];
+
+      if (preview) {
+        return preview;
+      }
+    }
+
+    return dependencies.getProductionAccess(request, token);
+  };
+}
+
+export const getPriceAlertManagementPageAccessWithDevelopmentPreviews =
+  createPriceAlertManagementPageAccessWithDevelopmentPreviews({
+    getNodeEnvironment: () => process.env.NODE_ENV,
+    getProductionAccess: getPriceAlertManagementPageAccess,
   });

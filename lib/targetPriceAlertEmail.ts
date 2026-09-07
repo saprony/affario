@@ -1,3 +1,5 @@
+import { formatUserFacingProductTitle } from "./userFacingProductTitle";
+
 export type TargetPriceAlertEmailDetails = {
   productName: string;
   currentPrice: number;
@@ -50,7 +52,8 @@ export function buildTargetPriceAlertEmailMessage({
     throw new Error("Prodotto e URL Amazon sono obbligatori.");
   }
 
-  const safeProductName = escapeHtml(productName.trim());
+  const userFacingProductName = formatUserFacingProductTitle(productName);
+  const safeProductName = escapeHtml(userFacingProductName);
   const safeAmazonUrl = escapeHtml(amazonUrl);
   const safePrivacyUrl = escapeHtml(AFFARIO_PRIVACY_URL);
   const formattedCurrentPrice = formatPrice(currentPrice);
@@ -67,7 +70,7 @@ export function buildTargetPriceAlertEmailMessage({
       : "";
 
   return {
-    subject: `Il prezzo che aspettavi è arrivato — ${productName.trim()}`,
+    subject: `Il prezzo che aspettavi è arrivato — ${userFacingProductName}`,
     htmlContent: `<!doctype html>
 <html lang="it">
   <head>
@@ -125,7 +128,7 @@ Il prezzo che aspettavi è arrivato
 
 AFFARIO ha rilevato che questa variante ha raggiunto o superato in meglio il tuo Prezzo Obiettivo.
 
-Prodotto: ${productName.trim()}
+Prodotto: ${userFacingProductName}
 Prezzo attuale rilevato: ${formattedCurrentPrice}
 Prezzo Obiettivo AFFARIO: ${formattedTargetPrice}${savingText}
 

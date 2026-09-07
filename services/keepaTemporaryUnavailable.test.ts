@@ -6,11 +6,12 @@ import {
   getKeepaRetryAfterSeconds,
   TEMPORARY_PRODUCT_DATA_MESSAGE,
 } from "./keepaTemporaryUnavailable";
+import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "../lib/consumerServiceMessages";
 
-test("il messaggio 429 consumer non espone provider o token", () => {
+test("il messaggio 503 consumer è coerente e non espone provider o token", () => {
   assert.equal(
     TEMPORARY_PRODUCT_DATA_MESSAGE,
-    "Stiamo aggiornando i dati del prodotto. Riprova tra qualche istante."
+    SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE
   );
   assert.doesNotMatch(TEMPORARY_PRODUCT_DATA_MESSAGE, /keepa|token|piano/i);
 });

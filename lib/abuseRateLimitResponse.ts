@@ -2,6 +2,10 @@ import "server-only";
 
 import type { AbuseRateLimitedOperationResult } from "@/services/abuseRateLimit";
 
+import {
+  SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+  TOO_MANY_REQUESTS_MESSAGE,
+} from "./consumerServiceMessages";
 import { API_NO_STORE_HEADERS } from "./jsonRequestBody";
 
 type AbuseRateLimitFailure = Exclude<
@@ -17,7 +21,7 @@ export function createAbuseRateLimitFailureResponse(
       {
         error: {
           code: "RATE_LIMITED",
-          message: "Troppe richieste. Riprova tra qualche istante.",
+          message: TOO_MANY_REQUESTS_MESSAGE,
         },
       },
       {
@@ -34,7 +38,7 @@ export function createAbuseRateLimitFailureResponse(
     {
       error: {
         code: "SERVICE_UNAVAILABLE",
-        message: "Servizio temporaneamente non disponibile. Riprova.",
+        message: SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
       },
     },
     { status: 503, headers: API_NO_STORE_HEADERS }

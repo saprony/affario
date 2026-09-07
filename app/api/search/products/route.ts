@@ -6,6 +6,7 @@ import {
   type AffarioProductSearchInputErrorCode,
 } from "@/lib/affarioProductSearch";
 import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
+import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
 import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
 import {
   ABUSE_RATE_LIMIT_POLICIES,
@@ -83,7 +84,7 @@ function mapError(
   if (error instanceof AffarioProductSearchServiceError) {
     return errorResponse(
       "SERVICE_UNAVAILABLE",
-      "La ricerca prodotti non e temporaneamente disponibile.",
+      SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
       503
     );
   }

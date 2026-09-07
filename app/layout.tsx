@@ -45,7 +45,7 @@ export default function RootLayout({
                 <p className="font-black tracking-[0.16em] text-emerald-800">
                   AFFARIO
                 </p>
-                <p className="mt-3">
+                <p className="mt-3 break-words text-xs font-normal leading-[1.5]">
                   In qualità di Affiliato Amazon io ricevo un guadagno dagli
                   acquisti idonei.
                 </p>
@@ -78,13 +78,13 @@ export default function RootLayout({
           </footer>
         ) : (
           <footer className="border-t border-gray-200 bg-white px-4 py-6 text-center text-sm leading-relaxed text-gray-600">
-            <p>
+            <p className="break-words text-xs font-normal leading-[1.5]">
               In qualità di Affiliato Amazon io ricevo un guadagno dagli acquisti
               idonei.
             </p>
             <Link
               href="/privacy"
-              className="mt-2 inline-block font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-900"
+              className="mt-2 inline-block text-xs font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-900"
             >
               Privacy
             </Link>

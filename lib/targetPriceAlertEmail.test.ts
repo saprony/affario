@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildTargetPriceAlertEmailMessage } from "./targetPriceAlertEmail";
+import {
+  formatUserFacingProductTitle,
+  USER_FACING_PRODUCT_TITLE_MAX_LENGTH,
+} from "./userFacingProductTitle";
 
 const amazonUrl =
   "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21";
@@ -51,4 +55,27 @@ test("non mostra una differenza quando il prezzo coincide con il target", () => 
 
   assert.doesNotMatch(message.htmlContent, /Differenza sotto il target/);
   assert.doesNotMatch(message.textContent, /Differenza sotto il target/);
+});
+
+test("l'email target mantiene subject e contenuti leggibili con un titolo lungo", () => {
+  const rawProductName =
+    "realme GT 8 Pro Smartphone 5G 16+512GB Snapdragon Elite processore veloce";
+  const productName = formatUserFacingProductTitle(rawProductName);
+  const message = buildTargetPriceAlertEmailMessage({
+    productName: rawProductName,
+    currentPrice: 820,
+    targetPrice: 830,
+    amazonUrl,
+  });
+
+  assert.equal(
+    message.subject,
+    `Il prezzo che aspettavi è arrivato — ${productName}`
+  );
+  assert.ok(
+    message.subject.length <= 37 + USER_FACING_PRODUCT_TITLE_MAX_LENGTH
+  );
+  assert.ok(message.htmlContent.includes(productName));
+  assert.ok(message.textContent.includes(`Prodotto: ${productName}`));
+  assert.doesNotMatch(message.subject, /processore veloce/u);
 });
