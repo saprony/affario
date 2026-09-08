@@ -32,6 +32,15 @@ Prima di iniziare qualsiasi nuova funzione:
   `2b5783640bb2107e876065119b36db6a1126ed2f`.
 - Commit di implementazione della Funzione 047A.3:
   `f7f786ce3af7e1dd82f48c5619f03866e2150d59`.
+- Commit tecnico della Funzione 047B.2C1:
+  `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`
+  (`feat: add hybrid product search relevance`).
+- Commit tecnico della Funzione 047B.2C2:
+  `71b6deecd35366a82f4900a5b738dd45b8975d90`
+  (`feat: add persistent product search cache`).
+- Le Funzioni 047B.2C1 e 047B.2C2 sono validate localmente, nel runtime reale
+  e, per la cache persistente, sul database remoto. I due commit sono ancora
+  locali e non sono presenti in Production.
 - Ultima funzione completata prima della remediation: **FUNZIONE 046B2**,
   validata localmente e con migration remota applicata. Il job Cron resta
   inattivo e l'attivazione reale è rinviata al go-live.
@@ -110,6 +119,15 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
 - La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: i titoli delle search card sono abbreviati esclusivamente a livello presentazionale e non incorporano suffissi che coincidono con valori variante variabili; gli attributi tecnici osservati `MemoryStorageCapacity` e `RamMemoryInstalledSize` usano le label consumer **Memoria** e **RAM**, con deduplicazione conservativa del riepilogo.
+- La **FUNZIONE 047B.2C1 è CLOSED / PASS**: 047B-009 e 047B-011 sono
+  risolti; le query testuali generiche combinano catalogo locale e discovery
+  provider, mentre exact ASIN locale e strong local identity possono evitare
+  la Search esterna. Merge, deduplicazione e ranking restano deterministici e
+  il risultato pubblico contiene al massimo 10 famiglie.
+- La **FUNZIONE 047B.2C2 è CLOSED / PASS**: le Search Keepa ripetute per la
+  stessa query normalizzata sono protette da una cache distribuita persistente
+  con TTL di 24 ore e stampede protection tramite le lease Postgres esistenti.
+  Il contratto pubblico non espone HIT/MISS e resta invariato.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
 - La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
@@ -221,7 +239,10 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 
 - Dalla Funzione 037, `GET /api/search/products?q=...` è collegato all'orchestratore local-first e restituisce soltanto il DTO pubblico AFFARIO.
 - Il servizio locale è `searchAffarioProducts(query)`.
-- L'orchestratore server-side `searchAffarioProductsWithFallback(query)` applica il flusso local-first: catalogo AFFARIO e, soltanto senza risultati locali, fallback al provider esterno.
+- L'orchestratore server-side `searchAffarioProductsWithFallback(query)`
+  applica il flusso local-first con espansione provider selettiva: exact ASIN
+  locale e strong local identity possono restare local-only; una query
+  testuale generica combina invece catalogo AFFARIO e discovery provider.
 - La ricerca normalizza e tokenizza, applica ranking leggibile e privilegia i risultati che soddisfano tutti i token significativi della query, senza riempire i risultati principali con match parziali quando esistono match completi.
 - Il catalogo locale e `EXTERNAL_PROVIDER` condividono la stessa regola provider-agnostic di costruzione delle famiglie consumer e ricompongono ogni variante con il proprio ASIN e insieme di attributi.
 - `parentAsin` resta un'informazione tecnica e non definisce necessariamente una singola famiglia consumer; `Style` può discriminare sotto-famiglie quando il parent Amazon comprende modelli commercialmente distinti.
@@ -230,9 +251,21 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Il flusso approvato è: **query → famiglie consumer → variante → ASIN**.
 - L'utente non deve conoscere l'ASIN o il titolo Amazon completo.
 - La selezione di un prodotto esterno non ancora persistito passa attraverso la pipeline esistente di lookup e persistenza.
-- Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES`; nell'orchestratore questo esito attiva il fallback provider esterno.
+- Una ricerca locale senza risultati restituisce `NO_LOCAL_MATCHES`; questo
+  esito attiva il provider esterno, che può essere usato anche per completare
+  query generiche con risultati locali.
 - Esiste un provider server-only per la ricerca keyword Keepa e la trasformazione dei Product Object in candidati AFFARIO provider-agnostic.
-- Il provider Keepa serve esclusivamente alla scoperta di prodotti non presenti nel catalogo locale: è raggiungibile soltanto tramite l'orchestratore server-side e non dispone di un endpoint pubblico proprio.
+- Il provider Keepa serve alla scoperta e al completamento dei candidati non
+  presenti nel catalogo locale: è raggiungibile soltanto tramite
+  l'orchestratore server-side e non dispone di un endpoint pubblico proprio.
+- Una singola Search provider può fornire fino a 20 Product Object da valutare
+  prima di grouping e ranking. Il merge elimina duplicati per `familyId` e
+  overlap ASIN, con precedenza ai risultati locali, e restituisce al massimo
+  10 famiglie. Il source pubblico resta `AFFARIO_CATALOG`, `KEEPA` o `HYBRID`.
+- La query cache persistente salva soltanto l'hash SHA-256 della query
+  normalizzata e i candidati provider normalizzati. Non salva la query raw né
+  il risultato finale local+provider; un cache hit non chiama Keepa e non
+  introduce Product lookup.
 - Il ranking esterno assegna forte priorità al match reale del brand, senza blacklist o brand hardcodati.
 - `GET /api/products/[asin]` è il primo ingresso applicativo reale per un ASIN valido.
 - La lookup pubblica restituisce un DTO AFFARIO sicuro, non raw Keepa.
@@ -415,8 +448,10 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047A.5 | **COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS** — 047A-014/015/016 chiusi; titoli alert user-facing abbreviati, copy 429/503 uniformate, affiliate footer rifinito e preview protette in Production |
 | 047B.2A | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — integrità del variant selector ripristinata; dimensioni singleton non obbligatorie, selezione solo esplicita, exact ASIN preservato e copy “varianti rilevate” |
 | 047B.2B | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — 047B-005/006 chiusi; titoli famiglia compatti nelle search card, mapping consumer Memoria/RAM e deduplicazione conservativa degli attributi |
+| 047B.2C1 | **CLOSED / PASS** — 047B-009/011 chiusi; ricerca ibrida local+provider, strong identity relevance, merge/dedup deterministici e massimo 10 famiglie |
+| 047B.2C2 | **CLOSED / PASS** — cache persistente distribuita delle query Search, TTL 24 ore, SHA-256 della query normalizzata, lease anti-stampede e runtime MISS→HIT verificato |
 
-Totale associazioni registrate: **45**.
+Totale associazioni registrate: **47**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -438,13 +473,22 @@ Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perch
   contatori 429 `interactive` e `background_alert`. Una risposta più vecchia
   non può sovrascrivere un bucket osservato più recentemente. Lo stato iniziale
   è vuoto e verrà popolato soltanto passivamente da future richieste reali.
-- Provider ricerca keyword server-only operativo: `domain=8`, una singola richiesta Keepa, massimo 10 candidati AFFARIO conservati e nessun endpoint pubblico.
+- Provider ricerca keyword server-only operativo: `domain=8`, una singola
+  richiesta Keepa, fino a 20 Product Object provider valutati prima di
+  grouping/ranking, massimo 10 famiglie finali e nessun endpoint pubblico.
 - Test reale `dreame matrix`: 1 chiamata Keepa, costo reale 10 token, 20 risultati Keepa ricevuti e 10 candidati AFFARIO conservati.
 - Nei risultati del test è stato rilevato rumore: un accessorio e un prodotto concorrente. Il ranking AFFARIO esterno corregge questo rumore con forte priorità al match reale del brand e mantiene la famiglia Matrix10 Ultra/Pro come più rilevante.
-- La ricerca keyword non persiste in Supabase prodotti, varianti, snapshot,
-  query o risultati. Quando raggiunge Keepa, aggiorna soltanto la telemetria
-  runtime aggregata server-side, priva di PII, condivisa con le altre chiamate
-  al provider.
+- La ricerca keyword non persiste in Supabase prodotti, varianti o snapshot.
+  La cache `public.product_search_query_cache` conserva per 24 ore soltanto
+  l'hash SHA-256 della query normalizzata e i candidati provider normalizzati:
+  non conserva la query raw, Product Object Keepa raw, prezzi, storico, token,
+  header, `serverReport` o il risultato finale local+provider. Quando la Search
+  raggiunge Keepa, aggiorna inoltre la sola telemetria runtime aggregata
+  server-side, priva di PII, condivisa con le altre chiamate al provider.
+- Runtime QA reale della query `friggitrice ad aria doppio cestello 9 litri per
+  famiglia grande`: prima richiesta MISS, una Keepa Search da 10 token, cache
+  write PASS e 10 famiglie finali; seconda richiesta identica HIT, zero nuove
+  Search, telemetria invariata e payload pubblico identico.
 
 ### 9.2 Catalogo e primo prodotto reale
 
@@ -987,9 +1031,10 @@ Il safety check certifica:
 - Nessuna chiamata Keepa è stata effettuata durante implementazione e QA
   tecnica. Monitoring e Cron restano OFF.
 - Stato successivo: **047B-005** e **047B-006** sono stati chiusi dalla
-  Funzione 047B.2B. Restano separati **047B-003 MEDIUM**, **047B-004 LOW**,
-  **047B-007 LOW/NOTE**, **047B-008 MEDIUM**, **047B-009 MEDIUM/HIGH** e
-  **047B-011 HIGH**.
+  Funzione 047B.2B. Al termine della 047B.2A restavano separati
+  **047B-003 MEDIUM**, **047B-004 LOW**, **047B-007 LOW/NOTE**,
+  **047B-008 MEDIUM**, **047B-009 MEDIUM/HIGH** e **047B-011 HIGH**; gli
+  ultimi due sono stati successivamente chiusi dalla Funzione 047B.2C1.
 
 ### 12.10 FUNZIONE 047B.2B — PRODUCT TITLES + USER-FACING ATTRIBUTES
 
@@ -1049,12 +1094,142 @@ Il safety check certifica:
 
 - Restano: **047B-003 MEDIUM** placeholder mobile troncato; **047B-004 LOW**
   preload warnings development; **047B-007 LOW/NOTE** exact ASIN search senza
-  preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente;
-  **047B-009 MEDIUM/HIGH** search relevance troppo ampia su query specifiche;
-  **047B-011 HIGH** ricerca generica incompleta, perché query come `iphone` o
-  `realme` si fermano ai match del catalogo locale e non esplorano il catalogo
-  provider.
-- Prossima funzione prioritaria: **047B.2C — SEARCH RELEVANCE + COMPLETENESS**.
+  preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente.
+- **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** sono stati successivamente
+  chiusi dalla Funzione 047B.2C1.
+
+### 12.11 FUNZIONE 047B.2C1 — HYBRID SEARCH + IDENTITY RELEVANCE
+
+- Stato: **CLOSED / PASS**.
+- Commit tecnico:
+  `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`
+  (`feat: add hybrid product search relevance`).
+
+#### Finding risolti
+
+- **047B-011 HIGH — CLOSED**: la presenza di risultati locali non blocca più
+  automaticamente la provider discovery per una ricerca testuale generica.
+- **047B-009 MEDIUM/HIGH — CLOSED**: quando esiste un forte identity match, i
+  risultati description-only non pertinenti vengono esclusi.
+
+#### Comportamento canonico
+
+- Exact ASIN locale: provider Search non necessaria.
+- Strong local identity: provider Search può essere evitata.
+- Generic text query: ricerca ibrida con catalogo locale e provider discovery.
+- Fino a 20 Product Object provider vengono valutati prima di
+  grouping/ranking.
+- Il merge local/provider è deterministico, deduplica per `familyId` e overlap
+  ASIN e assegna precedenza al risultato locale sui duplicati.
+- Il risultato pubblico contiene al massimo 10 famiglie.
+- Il source pubblico resta `AFFARIO_CATALOG`, `KEEPA` o `HYBRID`.
+- La Search non introduce Product lookup aggiuntivi.
+
+#### Manual QA
+
+- `iphone` → 10 famiglie.
+- `realme` → 10 famiglie/prodotti pertinenti.
+- `Sony WH-1000XM5` → risultati pertinenti; Sony ULT WEAR esclusa.
+
+### 12.12 FUNZIONE 047B.2C2 — PERSISTENT SEARCH QUERY CACHE
+
+- Stato: **CLOSED / PASS**.
+- Commit tecnico:
+  `71b6deecd35366a82f4900a5b738dd45b8975d90`
+  (`feat: add persistent product search cache`).
+- Obiettivo raggiunto: evitare Keepa Search ripetute per la stessa query
+  testuale entro il TTL.
+
+#### Architettura canonica
+
+- Cache distribuita persistente in
+  `public.product_search_query_cache`, con TTL di 24 ore.
+- La cache key è lo SHA-256 della query normalizzata con la sequenza
+  `trim → NFKC → lowercase → whitespace singolo`; la query raw non viene
+  persistita.
+- `payload_version = 1`.
+- Sono salvati i candidati provider normalizzati, non il risultato finale
+  local+provider.
+- Non vengono salvati Product Object Keepa raw, prezzi, storico, token, header
+  o `serverReport`.
+- Un risultato provider vuoto ma valido viene cacheato; gli errori provider non
+  vengono cacheati.
+- Viene riutilizzato il sistema di distributed lease esistente con chiave
+  `search:<query_hash>`; non esiste un secondo sistema di locking.
+- In caso di stampede il loser non chiama Keepa. Per la V1 è accettato un wait
+  bounded di 250 ms seguito da una sola rilettura.
+- Il source pubblico resta `AFFARIO_CATALOG`, `KEEPA` o `HYBRID`; HIT e MISS
+  non vengono esposti pubblicamente.
+
+#### Failure policy
+
+- Cache/store unavailable con risultati locali → risposta local-only `200`.
+- Cache/store unavailable senza risultati locali → `503` consumer-safe.
+- Provider failure con risultati locali → risposta local-only.
+- Provider failure senza risultati locali → `503`.
+- Cache write failure → comportamento conservativo senza retry Keepa
+  immediato.
+
+#### Migration e audit remoto
+
+- Migration:
+  `20260908000000_create_product_search_query_cache.sql`.
+- Stato: **APPLIED REMOTE / AUDITED / LEDGER ALIGNED**.
+- Campi: `query_hash`, `payload_version`, `candidates`, `result_count`,
+  `fetched_at`, `expires_at`.
+- Owner `postgres`; RLS enabled; `force_rls = false`; zero policy.
+- `anon` e `authenticated` non hanno privilegi. `service_role` ha soltanto
+  `SELECT`, `INSERT` e `UPDATE`; non ha `DELETE`, `TRUNCATE`, `REFERENCES` o
+  `TRIGGER`.
+- Constraints verificate: query hash di 64 caratteri lowercase hex;
+  `payload_version > 0`; `candidates` array JSON; `result_count >= 0` e uguale
+  alla lunghezza dell'array; `expires_at > fetched_at`; primary key su
+  `query_hash`.
+- Indici verificati: `product_search_query_cache_pkey` e
+  `product_search_query_cache_expires_at_idx`.
+- Il ledger `20260908000000` è allineato local/remote. La migration è stata
+  applicata manualmente tramite Supabase SQL Editor e la history è stata poi
+  riallineata con `migration repair --status applied`; non è stato usato
+  `supabase db push`.
+
+#### Real runtime cache QA
+
+- Query:
+  `friggitrice ad aria doppio cestello 9 litri per famiglia grande`.
+- Query hash:
+  `067aa11aa44a29bab8716581c790f1725c031e49d6373ad677bbf22326bc65fa`.
+- Stato iniziale: nessuna cache row.
+- Prima request: **CACHE MISS**, HTTP `200`, source `KEEPA`,
+  `MATCHES_FOUND`, 10 famiglie finali, una Keepa Search,
+  `tokensConsumed = 10`, cache write PASS.
+- Seconda request identica: **CACHE HIT**, HTTP `200`, source `KEEPA`,
+  `MATCHES_FOUND`, 10 famiglie finali, zero nuove Keepa Search, telemetria
+  Keepa invariata e payload pubblico identico.
+- Cache row: `payload_version = 1`, `result_count = 20`,
+  `fetched_at = 2026-09-08T20:17:15.472+00:00`,
+  `expires_at = 2026-09-09T20:17:15.472+00:00`.
+- I 20 candidati provider producono 10 famiglie finali dopo
+  grouping/ranking.
+- Nessun Product lookup aggiuntivo e nessuna chiamata Brevo.
+
+#### Validazione automatizzata del blocco 047B.2C
+
+- `npm test` PASS — 297/297.
+- lint PASS.
+- typecheck PASS.
+- build PASS.
+- `npm audit` PASS — zero vulnerabilità.
+- `git diff --check` PASS.
+
+### 12.13 Stato rollout 047B.2C
+
+- Le Funzioni 047B.2C1 e 047B.2C2 sono validate localmente e nel runtime reale;
+  schema, audit e ledger della query cache sono validati sul database remoto.
+- I commit C1 e C2 non sono ancora stati pushed e Production non li contiene.
+- In Production `app/page.tsx` resta sul percorso `PublicHome` editoriale.
+- Lo smoke test Production del nuovo blocco verrà eseguito soltanto dopo push e
+  deploy esplicitamente autorizzati.
+- Monitoring e Cron restano OFF.
 
 ## 13. Necessario prima del go-live
 
@@ -1116,7 +1291,8 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - Le Funzioni 001–007 non hanno una mappatura canonica certa: non inventarla.
 - La Funzione 013 non ha una mappatura canonica certa: non inventarla.
 - La formula definitiva dell'Affario Score deve ancora essere validata e definita sui dati reali; i valori demo restano provvisori.
-- La risposta tecnica definitiva Amazon è pendente e blocca la pubblicazione delle funzionalità reali Keepa/alert.
+- La risposta tecnica definitiva Amazon resta **OPEN PRE-GO-LIVE** e blocca la
+  pubblicazione delle funzionalità reali Keepa/alert.
 - Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
   attivato; resta inattivo fino al go-live esplicitamente autorizzato.
 - La FUNZIONE 046B2 di lock distribuito è completata e la migration è applicata
@@ -1126,20 +1302,36 @@ Le decisioni seguenti restano nella storia ma sono superate:
   rischio futuro da risolvere con paginazione deterministica oppure scheduling
   server-side.
 - La Funzione 047A.3 ha risolto 047A-006 a livello repository introducendo la
-  baseline V1 separata; resta aperto pre-go-live il recovery rehearsal
-  integrale su database disposable.
+  baseline V1 separata; il recovery rehearsal integrale su database disposable
+  resta **OPEN PRE-GO-LIVE**.
 - Il finding 047A-010 è chiuso/non applicabile. Il finding 047A-013 resta
-  aperto post-go-live/V1.1 e non blocca la V1; la differenza tra prefix
-  matching locale ed esterno richiede una decisione separata prima della
-  futura implementazione della ricerca indicizzata.
-- I finding **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** restano aperti: la
-  relevance è troppo ampia su alcune query specifiche e le query generiche con
-  match locali non esplorano il catalogo provider.
+  **OPEN — NEEDS DESIGN / POST-GO-LIVE / V1.1** e non blocca la V1; la
+  differenza tra prefix matching locale ed esterno richiede una decisione
+  separata prima della futura implementazione della ricerca indicizzata.
+- **047B-003 MEDIUM** resta OPEN: il placeholder mobile della ricerca è
+  troncato. La copy già decisa per la correzione è **“Cerca un prodotto”**.
+- **047B-004 LOW** resta OPEN: warning di preload/HMR in development.
+- **047B-007 LOW/NOTE** resta OPEN: una exact ASIN search non preseleziona
+  automaticamente la exact variant.
+- **047B-008 MEDIUM** resta OPEN: il `focus-visible` della selected green
+  option è troppo sottile.
+- **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** sono CLOSED dalla Funzione
+  047B.2C1 e non devono essere riaperti senza una nuova evidenza.
+- Il gate dei default privileges del creator role `supabase_admin` resta
+  **OPEN PRE-GO-LIVE** e separato dalla componente `postgres` già verificata.
 
 ## 17. Prossimo passo
 
-- La prossima funzione prioritaria è **047B.2C — SEARCH RELEVANCE +
-  COMPLETENESS**, dedicata ai finding aperti 047B-009 e 047B-011.
+- La **FUNZIONE 047B.2C1 è CLOSED / PASS** nel commit
+  `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`: 047B-009 e 047B-011 sono
+  chiusi; hybrid discovery, identity relevance, merge/dedup e source contract
+  sono validati.
+- La **FUNZIONE 047B.2C2 è CLOSED / PASS** nel commit
+  `71b6deecd35366a82f4900a5b738dd45b8975d90`: cache query persistente,
+  migration/audit/ledger e runtime MISS→HIT sono validati.
+- Il prossimo passo del blocco 047B.2C è il push/deploy esplicitamente
+  autorizzato, seguito dallo smoke test Production; fino ad allora Production
+  non contiene C1/C2 e `PublicHome` resta editoriale.
 - La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA
   PASS** nel commit `5560afaeffbe72febf0443a94390f071fd2360e4`;
   047B-005 e 047B-006 sono chiusi senza modificare dati raw, ranking, API,
