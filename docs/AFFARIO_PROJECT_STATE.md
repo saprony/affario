@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 7 settembre 2026.
+Ultimo aggiornamento: 8 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -107,7 +107,8 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - In produzione `app/page.tsx` mostra `PublicHome`.
 - In sviluppo `app/page.tsx` carica `DemoHome`.
 - Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
-- La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` o capacità storage come **Capacità**, `Style` come **Configurazione**.
+- La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
+- La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
 - La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
@@ -411,8 +412,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047A.2 | **COMPLETATA E VERIFICATA IN PRODUCTION** — finding 047A-003 corretto con scheduling snapshot batch tramite RPC POST server-only; migration e RPC applicate e allineate, deploy `Ready`, smoke Production 5/5 PASS; monitoring e Cron restano inattivi |
 | 047A.4 / 047A.4B | **DECISIONE QA REGISTRATA** — 047A-010 chiuso/non applicabile; 047A-013 confermato e rinviato post-go-live/V1.1 con design indicizzato definito ma non implementato |
 | 047A.5 | **COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS** — 047A-014/015/016 chiusi; titoli alert user-facing abbreviati, copy 429/503 uniformate, affiliate footer rifinito e preview protette in Production |
+| 047B.2A | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — integrità del variant selector ripristinata; dimensioni singleton non obbligatorie, selezione solo esplicita, exact ASIN preservato e copy “varianti rilevate” |
 
-Totale associazioni registrate: **43**.
+Totale associazioni registrate: **44**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -921,6 +923,74 @@ Il safety check certifica:
 - Stato finale: **047A-014 CLOSED**; **047A-015 CLOSED**; **047A-016 CLOSED**;
   **047A.5 COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS**.
 
+### 12.9 FUNZIONE 047B.2A — VARIANT SELECTOR INTEGRITY
+
+- Stato: **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**.
+- Commit di implementazione:
+  `f9fe86c6022766e298abea421864187b2f923289`
+  (`fix: preserve variant selector integrity`).
+
+#### 047B-010 — PROBLEMA E DIAGNOSI
+
+- Stato: **CLOSED**. Classificazione precedente: **HIGH**.
+- Il caso reale Sony WH-1000XM5 conteneva cinque varianti rilevate e due
+  configurazioni, Rigida e Morbida. `Size=Unica`, presente soltanto sull'ASIN
+  nero con custodia rigida, veniva mostrato impropriamente come selector
+  **Capacità** e reso obbligatorio; il filtro eliminava così Argento, BLU NOTTE
+  e Rosa fumè, lasciando raggiungibile soltanto Nero.
+- Diagnosi: **MIXED — DATA INCOMPLETE + UI FILTERING BUG + ATTRIBUTE MAPPING
+  BUG**. Non è stato certificato alcun **GROUPING BUG**.
+
+#### Comportamento canonico
+
+- La selezione filtra esclusivamente sulle scelte espressamente effettuate
+  dall'utente.
+- Una dimensione diventa selector soltanto se, nei candidati correnti, ha
+  almeno due valori distinti. Dimensioni con zero o un valore non diventano
+  selector obbligatori; i valori singoli restano dettagli descrittivi.
+- Una variante è individuata soltanto quando rimane esattamente un ASIN
+  candidato. In caso di ambiguità non viene mai selezionato implicitamente
+  `candidates[0]`.
+- La copy **“X varianti disponibili”** è sostituita da **“X varianti
+  rilevate”**, per non dichiarare completezza rispetto ad Amazon né
+  disponibilità commerciale certificata.
+- Una variante presente in `family.variants` / `product_variants` resta
+  selezionabile anche senza un record `products` completo, `keepa_snapshots` o
+  `keepa_raw_latest`. Il selector non esegue lookup Keepa preventivi e non
+  materializza automaticamente gli ASIN mancanti.
+- Soltanto l'azione esplicita **Analizza il prezzo** può attivare la Product API
+  esistente, che usa la cache oppure il normale refresh Keepa interattivo.
+- L'exact ASIN individuato resta quello usato da Product API, analisi AFFARIO e
+  CTA Amazon.
+
+#### Manual QA
+
+- **Sony — Custodia Rigida: PASS.** La UI mostra **5 varianti rilevate**,
+  Configurazione Rigida/Morbida e, dopo la scelta Rigida, i colori Argento, BLU
+  NOTTE, Nero e Rosa fumè. Non compare **Capacità → Unica** e tutti gli ASIN
+  rilevati restano raggiungibili.
+- **Sony — Custodia Morbida: PASS.** L'unico ASIN residuo viene risolto
+  automaticamente senza selector Colore inutile; il riepilogo è **Con Custodia
+  Morbida · Nero** e la CTA **Analizza il prezzo** è disponibile.
+- **Apple iPhone 17 Pro — regression QA: PASS.** La UI mostra **9 varianti
+  rilevate**, capacità 256 GB / 512 GB / 1 TB e colori coerenti; la selezione
+  **512 GB · Blu profondo** individua la variante corretta e la CTA resta
+  invariata.
+
+#### Validazione e finding residui
+
+- `git diff --check` PASS; lint PASS; typecheck PASS; 251/251 test PASS; build
+  PASS; `npm audit` PASS con zero vulnerabilità.
+- Il test copre esplicitamente le varianti Sony rilevate ma non materializzate.
+- Nessuna chiamata Keepa è stata effettuata durante implementazione e QA
+  tecnica. Monitoring e Cron restano OFF.
+- Restano separati: **047B-003 MEDIUM** placeholder mobile troncato;
+  **047B-004 LOW** preload warnings development; **047B-005 MEDIUM** titoli
+  Amazon troppo lunghi nelle card; **047B-006 MEDIUM** attributi variante
+  user-unfriendly/ridondanti; **047B-007 LOW/NOTE** ricerca tecnica exact ASIN
+  senza preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente;
+  **047B-009 MEDIUM** search relevance troppo ampia.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -1000,6 +1070,11 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA
+  PASS** nel commit `f9fe86c6022766e298abea421864187b2f923289`.
+  Il finding 047B-010 è chiuso; selector dinamici, varianti rilevate non
+  materializzate ed exact ASIN sono coperti da test e QA manuale. I finding
+  047B-003/004/005/006/007/008/009 restano separati.
 - La **FUNZIONE 047A.5 è completata e validata localmente con manual QA PASS**
   nel commit `604cefbd6c3a005bec72442cf0008ae221ed5603`: 047A-014, 047A-015 e
   047A-016 sono chiusi. Le preview alert restano fixture esclusivamente
