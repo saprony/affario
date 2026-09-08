@@ -38,9 +38,10 @@ Prima di iniziare qualsiasi nuova funzione:
 - Commit tecnico della Funzione 047B.2C2:
   `71b6deecd35366a82f4900a5b738dd45b8975d90`
   (`feat: add persistent product search cache`).
-- Le Funzioni 047B.2C1 e 047B.2C2 sono validate localmente, nel runtime reale
-  e, per la cache persistente, sul database remoto. I due commit sono ancora
-  locali e non sono presenti in Production.
+- Le Funzioni 047B.2C1 e 047B.2C2 sono validate localmente, nel runtime reale,
+  sul database remoto e in Production. Il deployment automatico Vercel del
+  commit `6e81680ae35a1aae1e76379ad1a59ee0c20d4f2a` è `SUCCESS / READY` e lo
+  smoke Production del blocco è PASS.
 - Ultima funzione completata prima della remediation: **FUNZIONE 046B2**,
   validata localmente e con migration remota applicata. Il job Cron resta
   inattivo e l'attivazione reale è rinviata al go-live.
@@ -119,12 +120,12 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
 - La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: i titoli delle search card sono abbreviati esclusivamente a livello presentazionale e non incorporano suffissi che coincidono con valori variante variabili; gli attributi tecnici osservati `MemoryStorageCapacity` e `RamMemoryInstalledSize` usano le label consumer **Memoria** e **RAM**, con deduplicazione conservativa del riepilogo.
-- La **FUNZIONE 047B.2C1 è CLOSED / PASS**: 047B-009 e 047B-011 sono
+- La **FUNZIONE 047B.2C1 è CLOSED / PRODUCTION PASS**: 047B-009 e 047B-011 sono
   risolti; le query testuali generiche combinano catalogo locale e discovery
   provider, mentre exact ASIN locale e strong local identity possono evitare
   la Search esterna. Merge, deduplicazione e ranking restano deterministici e
   il risultato pubblico contiene al massimo 10 famiglie.
-- La **FUNZIONE 047B.2C2 è CLOSED / PASS**: le Search Keepa ripetute per la
+- La **FUNZIONE 047B.2C2 è CLOSED / PRODUCTION PASS**: le Search Keepa ripetute per la
   stessa query normalizzata sono protette da una cache distribuita persistente
   con TTL di 24 ore e stampede protection tramite le lease Postgres esistenti.
   Il contratto pubblico non espone HIT/MISS e resta invariato.
@@ -448,8 +449,8 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047A.5 | **COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS** — 047A-014/015/016 chiusi; titoli alert user-facing abbreviati, copy 429/503 uniformate, affiliate footer rifinito e preview protette in Production |
 | 047B.2A | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — integrità del variant selector ripristinata; dimensioni singleton non obbligatorie, selezione solo esplicita, exact ASIN preservato e copy “varianti rilevate” |
 | 047B.2B | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — 047B-005/006 chiusi; titoli famiglia compatti nelle search card, mapping consumer Memoria/RAM e deduplicazione conservativa degli attributi |
-| 047B.2C1 | **CLOSED / PASS** — 047B-009/011 chiusi; ricerca ibrida local+provider, strong identity relevance, merge/dedup deterministici e massimo 10 famiglie |
-| 047B.2C2 | **CLOSED / PASS** — cache persistente distribuita delle query Search, TTL 24 ore, SHA-256 della query normalizzata, lease anti-stampede e runtime MISS→HIT verificato |
+| 047B.2C1 | **CLOSED / PRODUCTION PASS** — 047B-009/011 chiusi; ricerca ibrida local+provider, strong identity relevance, merge/dedup deterministici e massimo 10 famiglie |
+| 047B.2C2 | **CLOSED / PRODUCTION PASS** — cache persistente distribuita delle query Search, TTL 24 ore, SHA-256 della query normalizzata, lease anti-stampede e runtime MISS→HIT verificato in Production |
 
 Totale associazioni registrate: **47**.
 
@@ -1100,7 +1101,7 @@ Il safety check certifica:
 
 ### 12.11 FUNZIONE 047B.2C1 — HYBRID SEARCH + IDENTITY RELEVANCE
 
-- Stato: **CLOSED / PASS**.
+- Stato: **CLOSED / PRODUCTION PASS**.
 - Commit tecnico:
   `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`
   (`feat: add hybrid product search relevance`).
@@ -1133,7 +1134,7 @@ Il safety check certifica:
 
 ### 12.12 FUNZIONE 047B.2C2 — PERSISTENT SEARCH QUERY CACHE
 
-- Stato: **CLOSED / PASS**.
+- Stato: **CLOSED / PRODUCTION PASS**.
 - Commit tecnico:
   `71b6deecd35366a82f4900a5b738dd45b8975d90`
   (`feat: add persistent product search cache`).
@@ -1221,15 +1222,57 @@ Il safety check certifica:
 - `npm audit` PASS — zero vulnerabilità.
 - `git diff --check` PASS.
 
-### 12.13 Stato rollout 047B.2C
+### 12.13 Production smoke 047B.2C
 
-- Le Funzioni 047B.2C1 e 047B.2C2 sono validate localmente e nel runtime reale;
-  schema, audit e ledger della query cache sono validati sul database remoto.
-- I commit C1 e C2 non sono ancora stati pushed e Production non li contiene.
-- In Production `app/page.tsx` resta sul percorso `PublicHome` editoriale.
-- Lo smoke test Production del nuovo blocco verrà eseguito soltanto dopo push e
-  deploy esplicitamente autorizzati.
-- Monitoring e Cron restano OFF.
+- Stato complessivo: **047B.2C1 + 047B.2C2 PRODUCTION VERIFIED / PASS**.
+- Commit deployato:
+  `6e81680ae35a1aae1e76379ad1a59ee0c20d4f2a`.
+- Vercel Production: **SUCCESS / READY**.
+
+#### Home
+
+- `GET /` → HTTP `200`.
+- `PublicHome` editoriale resta attiva; `DemoHome` non è esposta in
+  Production.
+- Nessun errore server evidente.
+
+#### Cached Search Production
+
+- Query:
+  `friggitrice ad aria doppio cestello 9 litri per famiglia grande`.
+- HTTP `200`, source `KEEPA`, status `MATCHES_FOUND`, 10 famiglie finali.
+- Cache Production **HIT** confermato: la riga era fresh e invariata, non è
+  stata eseguita una nuova Keepa Search e il consumo Search è stato zero token.
+- Il payload pubblico è coerente con il QA locale e conserva il contratto
+  `query`, `source`, `status`, `families`.
+
+#### Exact ASIN Search
+
+- Query `B0FVXS42GF` → HTTP `200`, source `AFFARIO_CATALOG`, status
+  `MATCHES_FOUND`.
+- Il risultato è coerente con realme GT 8 Pro, modello `RMX5210`.
+- Il bypass C1 è confermato: zero Keepa Search e zero token.
+
+#### Product API
+
+- `GET /api/products/B0FVXS42GF` → HTTP `200`.
+- Buy Box `AVAILABLE`; prezzo `859,99 EUR`; media 90 giorni `852,32 EUR`;
+  minimo 90 giorni `829 EUR`.
+- Affario Score `48`, recommendation `WAIT`, target `830 EUR`, Risparmio
+  Potenziale `30 EUR`.
+- Lo snapshot Product aveva circa 274 minuti, oltre il TTL Product di 60
+  minuti: l'unica Product lookup Keepa eseguita ha consumato 3 token. Il
+  refresh è comportamento atteso.
+
+#### Operations
+
+- Consumo totale dello smoke: 3 token Keepa — Search cache 0, exact ASIN
+  Search 0, Product lookup 3.
+- Monitoring OFF; Cron OFF; cron secret non attivato.
+- Nessuna chiamata Brevo, nessun `db push`, nessuna migration aggiuntiva e
+  nessuna modifica RLS.
+- Git al termine dello smoke: working tree clean, ahead 0, behind 0.
+- Nessuna regressione o warning rilevante.
 
 ## 13. Necessario prima del go-live
 
@@ -1322,16 +1365,16 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- La **FUNZIONE 047B.2C1 è CLOSED / PASS** nel commit
+- La **FUNZIONE 047B.2C1 è CLOSED / PRODUCTION PASS** nel commit
   `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`: 047B-009 e 047B-011 sono
   chiusi; hybrid discovery, identity relevance, merge/dedup e source contract
   sono validati.
-- La **FUNZIONE 047B.2C2 è CLOSED / PASS** nel commit
+- La **FUNZIONE 047B.2C2 è CLOSED / PRODUCTION PASS** nel commit
   `71b6deecd35366a82f4900a5b738dd45b8975d90`: cache query persistente,
-  migration/audit/ledger e runtime MISS→HIT sono validati.
-- Il prossimo passo del blocco 047B.2C è il push/deploy esplicitamente
-  autorizzato, seguito dallo smoke test Production; fino ad allora Production
-  non contiene C1/C2 e `PublicHome` resta editoriale.
+  migration/audit/ledger, runtime MISS→HIT e smoke Production sono validati.
+- Il blocco 047B.2C è presente in Production nel deployment Vercel
+  `SUCCESS / READY` del commit
+  `6e81680ae35a1aae1e76379ad1a59ee0c20d4f2a`; `PublicHome` resta editoriale.
 - La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA
   PASS** nel commit `5560afaeffbe72febf0443a94390f071fd2360e4`;
   047B-005 e 047B-006 sono chiusi senza modificare dati raw, ranking, API,
