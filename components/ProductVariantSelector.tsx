@@ -5,11 +5,13 @@ import ProductPriceAnalysis from "@/components/ProductPriceAnalysis";
 import {
   createInitialVariantSelection,
   findVariantForSelection,
-  getAvailableVariantAttributeValues,
+  getDetectedVariantCountLabel,
   getDisplayFamilyTitle,
+  getVariantCandidates,
   getVariantDescription,
   getVariantDimensionLabel,
   getVariantDimensions,
+  getVariantSelectorSteps,
   type VariantSelection,
 } from "@/lib/productVariantSelection";
 import type { ProductAnalysisState } from "@/types/productAnalysis";
@@ -48,9 +50,17 @@ export default function ProductVariantSelector({
       ? family.variants[0].asin
       : null
   );
-  const dimensionedVariant = findVariantForSelection(
+  const selectorSteps = getVariantSelectorSteps(
     family.variants,
     dimensions,
+    selection
+  );
+  const candidateVariants = getVariantCandidates(
+    family.variants,
+    selection
+  );
+  const dimensionedVariant = findVariantForSelection(
+    family.variants,
     selection
   );
   const selectedVariant =
@@ -65,6 +75,13 @@ export default function ProductVariantSelector({
     analysisState.status !== "idle" &&
     analysisState.familyId === family.familyId &&
     analysisState.asin === selectedVariant.asin;
+  const hasPendingSelector = selectorSteps.some(
+    ({ dimension }) => !selection[dimension]
+  );
+  const hasUnresolvedVariantsWithoutSelector =
+    dimensions.length > 0 &&
+    candidateVariants.length > 1 &&
+    !hasPendingSelector;
 
   function handleAttributeSelect(
     dimension: string,
@@ -121,41 +138,16 @@ export default function ProductVariantSelector({
           {family.brand && <p className="mt-2 text-gray-600">{family.brand}</p>}
 
           <p className="mt-2 text-sm font-bold text-gray-500">
-            {family.variants.length === 1
-              ? "1 variante disponibile"
-              : `${family.variants.length} varianti disponibili`}
+            {getDetectedVariantCountLabel(family.variants.length)}
           </p>
         </div>
       </div>
 
-      {dimensions.map((dimension, dimensionIndex) => {
-        const previousDimensions = dimensions.slice(0, dimensionIndex);
-        const canChoose = previousDimensions.every(
-          (previousDimension) => selection[previousDimension]
-        );
-
-        if (!canChoose) {
-          return null;
-        }
-
-        const requiredSelection = Object.fromEntries(
-          previousDimensions
-            .filter((previousDimension) => selection[previousDimension])
-            .map((previousDimension) => [
-              previousDimension,
-              selection[previousDimension],
-            ])
-        );
-        const values = getAvailableVariantAttributeValues(
-          family.variants,
-          dimension,
-          requiredSelection
-        );
-
+      {selectorSteps.map(({ dimension, dimensionIndex, values }) => {
         return (
           <fieldset className="mt-5" key={dimension}>
             <legend className="font-bold text-gray-700">
-              {getVariantDimensionLabel(dimension)}
+              {getVariantDimensionLabel(dimension, family.variants)}
             </legend>
             <div className="mt-3 flex flex-wrap gap-2">
               {values.map((value) => {
@@ -188,7 +180,7 @@ export default function ProductVariantSelector({
       {dimensions.length === 0 && family.variants.length > 1 && (
         <fieldset className="mt-5">
           <legend className="font-bold text-gray-700">
-            Varianti disponibili
+            Varianti rilevate
           </legend>
           <div className="mt-3 flex flex-wrap gap-2">
             {family.variants.map((variant, index) => {
@@ -216,6 +208,19 @@ export default function ProductVariantSelector({
             })}
           </div>
         </fieldset>
+      )}
+
+      {candidateVariants.length === 0 && (
+        <p className="mt-5 rounded-xl bg-amber-50 p-4 font-bold text-amber-900">
+          La combinazione selezionata non identifica una variante rilevata.
+        </p>
+      )}
+
+      {hasUnresolvedVariantsWithoutSelector && (
+        <p className="mt-5 rounded-xl bg-amber-50 p-4 font-bold text-amber-900">
+          Gli attributi rilevati non distinguono queste varianti in modo
+          sicuro.
+        </p>
       )}
 
       {selectedVariant && (

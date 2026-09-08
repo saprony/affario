@@ -2,6 +2,12 @@ import type { AffarioProductSearchVariant } from "../types/productSearch";
 
 export type VariantSelection = Readonly<Record<string, string>>;
 
+export type VariantSelectorStep = {
+  dimension: string;
+  dimensionIndex: number;
+  values: readonly string[];
+};
+
 const DIMENSION_PRIORITY = [
   "style",
   "size",
@@ -13,7 +19,6 @@ const DIMENSION_PRIORITY = [
 ] as const;
 
 const ATTRIBUTE_LABELS: Readonly<Record<string, string>> = {
-  size: "Capacità",
   capacity: "Capacità",
   memory: "Capacità",
   storage: "Capacità",
@@ -97,6 +102,13 @@ function matchesSelection(
   return Object.entries(selection).every(
     ([dimension, value]) => getAttributeValue(variant, dimension) === value
   );
+}
+
+export function getVariantCandidates(
+  variants: readonly AffarioProductSearchVariant[],
+  selection: VariantSelection
+): AffarioProductSearchVariant[] {
+  return variants.filter((variant) => matchesSelection(variant, selection));
 }
 
 function queryContainsAttributeValue(query: string, value: string): boolean {
@@ -256,8 +268,26 @@ export function getVariantDimensions(
     .map(([, dimension]) => dimension);
 }
 
-export function getVariantDimensionLabel(dimension: string): string {
-  return ATTRIBUTE_LABELS[normalizeText(dimension)] ?? dimension;
+export function getVariantDimensionLabel(
+  dimension: string,
+  variants: readonly AffarioProductSearchVariant[]
+): string {
+  const normalizedDimension = normalizeText(dimension);
+
+  if (normalizedDimension === "size") {
+    const values = getAvailableVariantAttributeValues(
+      variants,
+      dimension,
+      {}
+    );
+    const isStorageSize =
+      values.length > 0 &&
+      values.every((value) => getCapacityInGigabytes(value) !== null);
+
+    return isStorageSize ? "Capacità" : "Taglia";
+  }
+
+  return ATTRIBUTE_LABELS[normalizedDimension] ?? dimension;
 }
 
 export function getDisplayFamilyTitle(
@@ -306,6 +336,39 @@ export function getAvailableVariantAttributeValues(
   ).sort((left, right) => compareAttributeValues(dimension, left, right));
 }
 
+export function getVariantSelectorSteps(
+  variants: readonly AffarioProductSearchVariant[],
+  dimensions: readonly string[],
+  selection: VariantSelection
+): VariantSelectorStep[] {
+  const steps: VariantSelectorStep[] = [];
+  const appliedSelection: Record<string, string> = {};
+
+  for (const [dimensionIndex, dimension] of dimensions.entries()) {
+    const values = getAvailableVariantAttributeValues(
+      variants,
+      dimension,
+      appliedSelection
+    );
+
+    if (values.length < 2) {
+      continue;
+    }
+
+    steps.push({ dimension, dimensionIndex, values });
+
+    const selectedValue = selection[dimension];
+
+    if (!selectedValue || !values.includes(selectedValue)) {
+      break;
+    }
+
+    appliedSelection[dimension] = selectedValue;
+  }
+
+  return steps;
+}
+
 export function createInitialVariantSelection(
   query: string,
   variants: readonly AffarioProductSearchVariant[],
@@ -314,11 +377,19 @@ export function createInitialVariantSelection(
   const selection: Record<string, string> = {};
 
   for (const dimension of dimensions) {
-    const matchingValues = getAvailableVariantAttributeValues(
+    const availableValues = getAvailableVariantAttributeValues(
       variants,
       dimension,
       selection
-    ).filter((value) => queryContainsAttributeValue(query, value));
+    );
+
+    if (availableValues.length < 2) {
+      continue;
+    }
+
+    const matchingValues = availableValues.filter((value) =>
+      queryContainsAttributeValue(query, value)
+    );
 
     if (matchingValues.length !== 1) {
       break;
@@ -332,19 +403,17 @@ export function createInitialVariantSelection(
 
 export function findVariantForSelection(
   variants: readonly AffarioProductSearchVariant[],
-  dimensions: readonly string[],
   selection: VariantSelection
 ): AffarioProductSearchVariant | null {
-  if (
-    dimensions.length === 0 ||
-    !dimensions.every((dimension) => selection[dimension])
-  ) {
-    return null;
-  }
+  const candidates = getVariantCandidates(variants, selection);
 
-  return (
-    variants.find((variant) => matchesSelection(variant, selection)) ?? null
-  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+export function getDetectedVariantCountLabel(count: number): string {
+  return count === 1
+    ? "1 variante rilevata"
+    : `${count} varianti rilevate`;
 }
 
 export function getVariantDescription(
@@ -354,5 +423,5 @@ export function getVariantDescription(
     .map((dimension) => getAttributeValue(variant, dimension))
     .filter((value): value is string => Boolean(value));
 
-  return values.length > 0 ? values.join(" · ") : "Variante disponibile";
+  return values.length > 0 ? values.join(" · ") : "Variante rilevata";
 }

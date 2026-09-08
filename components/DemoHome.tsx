@@ -217,7 +217,7 @@ export default function DemoHome() {
           <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow">
             <p className="text-lg font-bold">Ricerca dei prodotti in corso...</p>
             <p className="mt-2 text-gray-500">
-              Stiamo cercando le famiglie e le varianti disponibili.
+              Stiamo cercando le famiglie e le varianti rilevate.
             </p>
           </div>
         </section>
