@@ -129,6 +129,8 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   stessa query normalizzata sono protette da una cache distribuita persistente
   con TTL di 24 ore e stampede protection tramite le lease Postgres esistenti.
   Il contratto pubblico non espone HIT/MISS e resta invariato.
+- Il finding **047B-003 è CLOSED / PASS**: il placeholder Search consumer usa
+  la copy breve **“Cerca un prodotto”**, validata manualmente a 320 px e 390 px.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
 - La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
@@ -1093,9 +1095,11 @@ Il safety check certifica:
 
 #### Finding residui e priorità
 
-- Restano: **047B-003 MEDIUM** placeholder mobile troncato; **047B-004 LOW**
-  preload warnings development; **047B-007 LOW/NOTE** exact ASIN search senza
-  preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente.
+- **047B-003 MEDIUM** è stato successivamente chiuso con PASS dalla correzione
+  del placeholder Search consumer.
+- Restano: **047B-004 LOW** preload warnings development; **047B-007 LOW/NOTE**
+  exact ASIN search senza preselezione variante; **047B-008 MEDIUM**
+  focus-visible poco evidente.
 - **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** sono stati successivamente
   chiusi dalla Funzione 047B.2C1.
 
@@ -1274,6 +1278,20 @@ Il safety check certifica:
 - Git al termine dello smoke: working tree clean, ahead 0, behind 0.
 - Nessuna regressione o warning rilevante.
 
+### 12.14 FUNZIONE 047B-003 — SEARCH PLACEHOLDER MOBILE
+
+- Stato: **CLOSED / PASS**.
+- Il placeholder Search consumer è stato modificato da **“Che prodotto stai
+  pensando di comprare?”** a **“Cerca un prodotto”**, senza altre modifiche UI
+  o funzionali.
+- Manual QA: 320 px PASS e 390 px PASS; nessun taglio del testo, overlap,
+  problema di layout o regressione visiva evidente.
+- Commit tecnico:
+  `468aff7db1af844734201d8f50fd9709dd3b43ef`
+  (`fix: shorten product search placeholder`).
+- Validazione: 297/297 test PASS; lint, typecheck e build PASS;
+  `git diff --check` PASS.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -1351,8 +1369,6 @@ Le decisioni seguenti restano nella storia ma sono superate:
   **OPEN — NEEDS DESIGN / POST-GO-LIVE / V1.1** e non blocca la V1; la
   differenza tra prefix matching locale ed esterno richiede una decisione
   separata prima della futura implementazione della ricerca indicizzata.
-- **047B-003 MEDIUM** resta OPEN: il placeholder mobile della ricerca è
-  troncato. La copy già decisa per la correzione è **“Cerca un prodotto”**.
 - **047B-004 LOW** resta OPEN: warning di preload/HMR in development.
 - **047B-007 LOW/NOTE** resta OPEN: una exact ASIN search non preseleziona
   automaticamente la exact variant.
@@ -1365,6 +1381,9 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 047B-003 è CLOSED / PASS** nel commit
+  `468aff7db1af844734201d8f50fd9709dd3b43ef`: il placeholder Search consumer
+  usa **“Cerca un prodotto”** e la QA manuale a 320 px e 390 px è PASS.
 - La **FUNZIONE 047B.2C1 è CLOSED / PRODUCTION PASS** nel commit
   `f867c7a62eb9a15c00cc5c2500f035bf60dc18c7`: 047B-009 e 047B-011 sono
   chiusi; hybrid discovery, identity relevance, merge/dedup e source contract
