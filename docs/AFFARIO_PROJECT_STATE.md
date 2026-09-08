@@ -131,6 +131,9 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   Il contratto pubblico non espone HIT/MISS e resta invariato.
 - Il finding **047B-003 è CLOSED / PASS**: il placeholder Search consumer usa
   la copy breve **“Cerca un prodotto”**, validata manualmente a 320 px e 390 px.
+- Il finding **047B-008 è CLOSED / PASS**: le opzioni variante selezionate
+  espongono un focus da tastiera chiaramente visibile, senza modificare il
+  design normale o il comportamento del selector.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
 - La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
@@ -1097,9 +1100,10 @@ Il safety check certifica:
 
 - **047B-003 MEDIUM** è stato successivamente chiuso con PASS dalla correzione
   del placeholder Search consumer.
-- Restano: **047B-004 LOW** preload warnings development; **047B-007 LOW/NOTE**
-  exact ASIN search senza preselezione variante; **047B-008 MEDIUM**
-  focus-visible poco evidente.
+- **047B-008 MEDIUM** è stato successivamente chiuso con PASS dal miglioramento
+  mirato del focus da tastiera delle opzioni selezionate.
+- Restano **OPEN — POST-LIVE**: **047B-004 LOW** preload warnings development
+  e **047B-007 LOW/NOTE** exact ASIN search senza preselezione variante.
 - **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** sono stati successivamente
   chiusi dalla Funzione 047B.2C1.
 
@@ -1292,6 +1296,17 @@ Il safety check certifica:
 - Validazione: 297/297 test PASS; lint, typecheck e build PASS;
   `git diff --check` PASS.
 
+### 12.15 FUNZIONE 047B-008 — VARIANT FOCUS VISIBILITY
+
+- Stato: **CLOSED / PASS**.
+- In `components/ProductVariantSelector.tsx` il focus da tastiera delle opzioni
+  selezionate usa `focus-visible` con ring da 4 px verde scuro e offset da 2
+  px; lo stato normale, hover e selected restano invariati.
+- Manual QA PASS: focus chiaramente visibile, design normale invariato e
+  nessuna regressione del variant selector.
+- Validazione: 297/297 test PASS; lint, typecheck e build PASS;
+  `git diff --check` PASS.
+
 ## 13. Necessario prima del go-live
 
 La V1 pre-lancio deve restare stretta. Sono necessari:
@@ -1369,11 +1384,15 @@ Le decisioni seguenti restano nella storia ma sono superate:
   **OPEN — NEEDS DESIGN / POST-GO-LIVE / V1.1** e non blocca la V1; la
   differenza tra prefix matching locale ed esterno richiede una decisione
   separata prima della futura implementazione della ricerca indicizzata.
-- **047B-004 LOW** resta OPEN: warning di preload/HMR in development.
-- **047B-007 LOW/NOTE** resta OPEN: una exact ASIN search non preseleziona
-  automaticamente la exact variant.
-- **047B-008 MEDIUM** resta OPEN: il `focus-visible` della selected green
-  option è troppo sottile.
+- **047B-004 LOW** resta **OPEN — POST-LIVE**: warning di preload/HMR in
+  development.
+- **047B-007 LOW/NOTE** resta **OPEN — POST-LIVE**: una exact ASIN search non
+  preseleziona automaticamente la exact variant.
+- La pulizia automatica delle righe scadute di
+  `product_search_query_cache` resta **OPEN — POST-LIVE**; la validità runtime
+  continua a dipendere da `expires_at`.
+- I refinement non bloccanti restano **OPEN — POST-LIVE** e non devono
+  espandere il perimetro della V1 pre-lancio.
 - **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** sono CLOSED dalla Funzione
   047B.2C1 e non devono essere riaperti senza una nuova evidenza.
 - Il gate dei default privileges del creator role `supabase_admin` resta
@@ -1381,6 +1400,9 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 047B-008 è CLOSED / PASS**: il focus da tastiera delle opzioni
+  variante selezionate è chiaramente visibile e la QA manuale non rileva
+  regressioni del selector.
 - La **FUNZIONE 047B-003 è CLOSED / PASS** nel commit
   `468aff7db1af844734201d8f50fd9709dd3b43ef`: il placeholder Search consumer
   usa **“Cerca un prodotto”** e la QA manuale a 320 px e 390 px è PASS.

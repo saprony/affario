@@ -164,7 +164,7 @@ export default function ProductVariantSelector({
                     }
                     className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition disabled:cursor-wait disabled:opacity-60 ${
                       isSelected
-                        ? "border-green-600 bg-green-600 text-white"
+                        ? "border-green-600 bg-green-600 text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-800 focus-visible:ring-offset-2"
                         : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
                     }`}
                   >
@@ -198,7 +198,7 @@ export default function ProductVariantSelector({
                   }
                   className={`min-h-11 rounded-xl border px-4 py-2 font-bold transition disabled:cursor-wait disabled:opacity-60 ${
                     isSelected
-                      ? "border-green-600 bg-green-600 text-white"
+                      ? "border-green-600 bg-green-600 text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-800 focus-visible:ring-offset-2"
                       : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
                   }`}
                 >
