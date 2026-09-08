@@ -72,12 +72,14 @@ function mapError(
     return errorResponse(error.code, messages[error.code], 400);
   }
 
-  if (error instanceof KeepaClientError && error.code === "OUT_OF_TOKENS") {
+  if (error instanceof KeepaClientError) {
     return errorResponse(
       "SERVICE_UNAVAILABLE",
       TEMPORARY_PRODUCT_DATA_MESSAGE,
       503,
-      getKeepaRetryAfterSeconds(error)
+      error.code === "OUT_OF_TOKENS"
+        ? getKeepaRetryAfterSeconds(error)
+        : undefined
     );
   }
 

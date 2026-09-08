@@ -1,11 +1,9 @@
 import "server-only";
 
-import {
-  AFFARIO_PRODUCT_SEARCH_MAX_RESULTS,
-  prepareAffarioProductSearchQuery,
-} from "@/lib/affarioProductSearch";
+import { prepareAffarioProductSearchQuery } from "@/lib/affarioProductSearch";
 import {
   searchKeepaProducts,
+  type KeepaProductSearchResult,
   type KeepaProductSummary,
   type KeepaVariation,
 } from "@/services/keepaClient";
@@ -29,6 +27,11 @@ export type KeepaProductSearchProviderResult = {
   data: AffarioExternalProductSearchResult;
   serverReport: KeepaProductSearchServerReport;
 };
+
+export type KeepaProductSearcher = (
+  query: string,
+  options?: { context?: "interactive" | "background_alert" }
+) => Promise<KeepaProductSearchResult>;
 
 function getMainImageUrl(product: KeepaProductSummary): string | null {
   const mainImage = product.images?.find(
@@ -114,16 +117,15 @@ function mapCandidate(
 }
 
 export async function searchKeepaProductCandidates(
-  query: string
+  query: string,
+  productSearcher: KeepaProductSearcher = searchKeepaProducts
 ): Promise<KeepaProductSearchProviderResult> {
   const preparedQuery = prepareAffarioProductSearchQuery(query);
-  const keepaResult = await searchKeepaProducts(
+  const keepaResult = await productSearcher(
     preparedQuery.normalizedQuery,
     { context: "interactive" }
   );
-  const candidates = keepaResult.products
-    .slice(0, AFFARIO_PRODUCT_SEARCH_MAX_RESULTS)
-    .map(mapCandidate);
+  const candidates = keepaResult.products.map(mapCandidate);
 
   return {
     data: {

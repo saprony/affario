@@ -54,7 +54,7 @@ export type AffarioProductSearchWithFallbackStatus =
 
 export type AffarioProductSearchWithFallbackResult = {
   query: string;
-  source: "AFFARIO_CATALOG" | "EXTERNAL_PROVIDER";
+  source: "AFFARIO_CATALOG" | "KEEPA" | "HYBRID";
   status: AffarioProductSearchWithFallbackStatus;
   families: readonly AffarioProductSearchFamily[];
 };

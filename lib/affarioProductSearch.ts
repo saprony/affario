@@ -8,6 +8,10 @@ export const AFFARIO_PRODUCT_SEARCH_MIN_QUERY_LENGTH = 2;
 export const AFFARIO_PRODUCT_SEARCH_MAX_QUERY_LENGTH = 100;
 export const AFFARIO_PRODUCT_SEARCH_MAX_RESULTS = 10;
 
+const AFFARIO_IDENTITY_TITLE_MAX_TOKENS = 12;
+const AFFARIO_IDENTITY_TITLE_SEPARATOR =
+  /[,|:;\u2022]|\s[-\u2013\u2014]\s/u;
+
 const SCORE = {
   exactAsin: 10_000,
   exactModel: 5_000,
@@ -58,6 +62,7 @@ type ScoredFamily = {
   family: AffarioProductSearchFamily;
   score: number;
   allSignificantTokensMatch: boolean;
+  completeIdentityMatch: boolean;
 };
 
 type ScoredExternalFamily = ScoredFamily & {
@@ -129,6 +134,34 @@ function getTokens(value: string | null): Set<string> {
   return new Set(normalizedValue ? normalizedValue.split(" ") : []);
 }
 
+function normalizeAffarioProductIdentity(value: string | null): string {
+  return value
+    ? value
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, "")
+    : "";
+}
+
+function getIdentityTitlePrefix(title: string): string {
+  const separator = AFFARIO_IDENTITY_TITLE_SEPARATOR.exec(title);
+  const prefix = separator?.index === undefined
+    ? title
+    : title.slice(0, separator.index);
+  const normalizedPrefix = normalizeAffarioProductSearchText(prefix);
+
+  return normalizedPrefix
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, AFFARIO_IDENTITY_TITLE_MAX_TOKENS)
+    .join(" ");
+}
+
+function isMixedAlphaNumericToken(token: string): boolean {
+  return /\p{L}/u.test(token) && /\p{N}/u.test(token);
+}
+
 function addTokens(target: Set<string>, source: ReadonlySet<string>): void {
   for (const token of source) {
     target.add(token);
@@ -157,6 +190,54 @@ function countTokenMatches(
   fieldTokens: ReadonlySet<string>
 ): number {
   return queryTokens.filter((token) => fieldTokens.has(token)).length;
+}
+
+export function hasAffarioSpecificModelSignal(
+  preparedQuery: PreparedAffarioProductSearchQuery
+): boolean {
+  return preparedQuery.tokens.some(isMixedAlphaNumericToken);
+}
+
+export function hasCompleteAffarioIdentityMatch(
+  preparedQuery: PreparedAffarioProductSearchQuery,
+  family: AffarioProductSearchFamily
+): boolean {
+  const identityTitlePrefix = getIdentityTitlePrefix(family.title);
+  const identityTokens = new Set<string>();
+
+  addTokens(identityTokens, getTokens(family.brand));
+  addTokens(identityTokens, getTokens(family.model));
+  addTokens(identityTokens, getTokens(identityTitlePrefix));
+
+  const compactModel = normalizeAffarioProductIdentity(family.model);
+  const compactTitlePrefix = normalizeAffarioProductIdentity(
+    identityTitlePrefix
+  );
+
+  const significantQueryTokens = getSignificantQueryTokens(
+    preparedQuery.tokens
+  );
+  const unmatchedQueryTokens = significantQueryTokens.filter(
+    (queryToken) =>
+      ![...identityTokens].some((identityToken) =>
+        affarioSearchTokenMatches(queryToken, identityToken)
+      )
+  );
+
+  if (unmatchedQueryTokens.length === 0) {
+    return true;
+  }
+
+  const compactUnmatchedQuery = normalizeAffarioProductIdentity(
+    unmatchedQueryTokens.join(" ")
+  );
+
+  return (
+    compactUnmatchedQuery.length >= 3 &&
+    isMixedAlphaNumericToken(compactUnmatchedQuery) &&
+    (compactModel.includes(compactUnmatchedQuery) ||
+      compactTitlePrefix.includes(compactUnmatchedQuery))
+  );
 }
 
 function scoreFamily(
@@ -189,9 +270,13 @@ function scoreFamily(
   const allSignificantTokensMatch =
     countAffarioSearchTokenMatches(significantQueryTokens, allTokens) ===
     significantQueryTokens.length;
+  const completeIdentityMatch = hasCompleteAffarioIdentityMatch(
+    preparedQuery,
+    family
+  );
   const exactAsin = asinTokens.has(preparedQuery.normalizedQuery);
 
-  if (matchedTokens === 0 && !exactAsin) {
+  if (matchedTokens === 0 && !exactAsin && !completeIdentityMatch) {
     return null;
   }
 
@@ -248,6 +333,7 @@ function scoreFamily(
       : family,
     score,
     allSignificantTokensMatch,
+    completeIdentityMatch,
   };
 }
 
@@ -265,6 +351,18 @@ function keepCompleteTokenMatchesWhenAvailable<T extends ScoredFamily>(
     : [...scoredFamilies];
 }
 
+function keepIdentityMatchesWhenAvailable<T extends ScoredFamily>(
+  scoredFamilies: readonly T[]
+): T[] {
+  const identityMatches = scoredFamilies.filter(
+    ({ completeIdentityMatch }) => completeIdentityMatch
+  );
+
+  return identityMatches.length > 0
+    ? identityMatches
+    : keepCompleteTokenMatchesWhenAvailable(scoredFamilies);
+}
+
 export function rankAffarioProductFamilies(
   preparedQuery: PreparedAffarioProductSearchQuery,
   families: readonly AffarioProductSearchFamily[]
@@ -274,7 +372,7 @@ export function rankAffarioProductFamilies(
     return scoredFamily ? [scoredFamily] : [];
   });
 
-  return keepCompleteTokenMatchesWhenAvailable(scoredFamilies)
+  return keepIdentityMatchesWhenAvailable(scoredFamilies)
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -636,9 +734,13 @@ function scoreExternalFamily(
   const allSignificantTokensMatch =
     countAffarioSearchTokenMatches(significantQueryTokens, allTokens) ===
     significantQueryTokens.length;
+  const completeIdentityMatch = hasCompleteAffarioIdentityMatch(
+    preparedQuery,
+    family
+  );
   const exactAsin = asinTokens.has(preparedQuery.normalizedQuery);
 
-  if (matchedTokens === 0 && !exactAsin) {
+  if (matchedTokens === 0 && !exactAsin && !completeIdentityMatch) {
     return null;
   }
 
@@ -693,12 +795,14 @@ function scoreExternalFamily(
     score,
     providerIndex,
     allSignificantTokensMatch,
+    completeIdentityMatch,
   };
 }
 
 export function rankAffarioExternalProductFamilies(
   preparedQuery: PreparedAffarioProductSearchQuery,
-  families: readonly AffarioProductSearchFamily[]
+  families: readonly AffarioProductSearchFamily[],
+  maxResults: number | null = AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
 ): AffarioProductSearchFamily[] {
   const queryBrandTokens = getExactQueryBrandTokens(
     preparedQuery,
@@ -715,15 +819,18 @@ export function rankAffarioExternalProductFamilies(
       );
       return scoredFamily ? [scoredFamily] : [];
     });
-  const relevantFamilies = keepCompleteTokenMatchesWhenAvailable(scoredFamilies);
+  const relevantFamilies = keepIdentityMatchesWhenAvailable(scoredFamilies);
 
-  return relevantFamilies
+  const rankedFamilies = relevantFamilies
     .sort(
       (left, right) =>
         right.score - left.score ||
         left.providerIndex - right.providerIndex ||
         left.family.familyId.localeCompare(right.family.familyId)
     )
-    .slice(0, AFFARIO_PRODUCT_SEARCH_MAX_RESULTS)
     .map(({ family }) => family);
+
+  return maxResults === null
+    ? rankedFamilies
+    : rankedFamilies.slice(0, maxResults);
 }
