@@ -8,9 +8,11 @@ import {
   getDetectedVariantCountLabel,
   getDisplayFamilyTitle,
   getVariantCandidates,
+  getVariantDescription,
   getVariantDimensionLabel,
   getVariantDimensions,
   getVariantSelectorSteps,
+  SEARCH_CARD_PRODUCT_TITLE_MAX_LENGTH,
 } from "./productVariantSelection";
 import type { AffarioProductSearchVariant } from "../types/productSearch";
 
@@ -89,6 +91,29 @@ const sonyWh1000Xm5Variants: readonly AffarioProductSearchVariant[] = [
   },
 ];
 
+const realmeGt8ProTitle =
+  'realme GT 8 Pro, 16+512 GB, Ricarica 120W, 7000mAh, 50MP IMX906 OIS, Display 6,78" 2K 144Hz, Telephoto 200MP, Snapdragon 8850, Blu, Adattatore, Deco, Clip Incluso';
+
+const realmeGt8ProVariants: readonly AffarioProductSearchVariant[] = [
+  {
+    asin: "B0FVXS42GF",
+    attributes: {
+      Color: "Blu",
+      MemoryStorageCapacity: "512 GB",
+      RamMemoryInstalledSize: "16 GB",
+      Size: "16+512 Go",
+    },
+  },
+  {
+    asin: "B0FYLX6W9J",
+    attributes: {
+      Color: "Bianco",
+      MemoryStorageCapacity: "512 GB",
+      RamMemoryInstalledSize: "16 GB",
+    },
+  },
+];
+
 test("presenta Style come configurazione senza duplicarlo come colore", () => {
   const dimensions = getVariantDimensions(matrixVariants);
 
@@ -113,6 +138,95 @@ test("normalizza il titolo marketplace usando separatori e attributi", () => {
   );
 });
 
+test("il titolo search corto resta invariato e il fallback è sicuro", () => {
+  assert.equal(
+    getDisplayFamilyTitle("Apple iPhone 17 Pro", iphoneVariants),
+    "Apple iPhone 17 Pro"
+  );
+  assert.equal(getDisplayFamilyTitle("   ", []), "Prodotto rilevato");
+});
+
+test("il titolo search lungo viene abbreviato senza spezzare parole", () => {
+  const rawTitle =
+    "Prodotto estremamente lungo senza separatori con descrizione dettagliata destinata a occupare molte righe";
+  const displayTitle = getDisplayFamilyTitle(rawTitle, []);
+  const visibleTitle = displayTitle.slice(0, -1);
+
+  assert.ok(displayTitle.length <= SEARCH_CARD_PRODUCT_TITLE_MAX_LENGTH);
+  assert.ok(displayTitle.endsWith("…"));
+  assert.equal(rawTitle.startsWith(visibleTitle), true);
+  assert.equal(rawTitle[visibleTitle.length], " ");
+});
+
+test("la formattazione search non altera il titolo raw", () => {
+  const family = { title: realmeGt8ProTitle };
+
+  assert.equal(
+    getDisplayFamilyTitle(family.title, realmeGt8ProVariants),
+    "realme GT 8 Pro"
+  );
+  assert.equal(family.title, realmeGt8ProTitle);
+});
+
+test("compatta il titolo reale Sony mantenendo brand e modello", () => {
+  const family = {
+    title:
+      "Sony WH-1000XM5 Custodia Rigida |Cuffie Wireless con Noise Cancelling, 30 ore di autonomia, ottimizzate per Alexa e Google Assistant, Bluetooth, Nero",
+  };
+
+  assert.equal(
+    getDisplayFamilyTitle(family.title, sonyWh1000Xm5Variants),
+    "Sony WH-1000XM5"
+  );
+  assert.equal(
+    family.title,
+    "Sony WH-1000XM5 Custodia Rigida |Cuffie Wireless con Noise Cancelling, 30 ore di autonomia, ottimizzate per Alexa e Google Assistant, Bluetooth, Nero"
+  );
+});
+
+test("rimuove un valore Style rappresentativo senza hardcode di prodotto", () => {
+  const variants: readonly AffarioProductSearchVariant[] = [
+    {
+      asin: "GENERIC-PREMIUM",
+      attributes: { Style: "Con Edizione Premium" },
+    },
+    {
+      asin: "GENERIC-STANDARD",
+      attributes: { Style: "Con Edizione Standard" },
+    },
+  ];
+
+  assert.equal(
+    getDisplayFamilyTitle("Acme SoundPro Edizione Premium", variants),
+    "Acme SoundPro"
+  );
+});
+
+test("non rimuove testo soltanto simile a un valore variante", () => {
+  const variants: readonly AffarioProductSearchVariant[] = [
+    {
+      asin: "GENERIC-PREMIUM",
+      attributes: { Style: "Con Edizione Premium" },
+    },
+    {
+      asin: "GENERIC-STANDARD",
+      attributes: { Style: "Con Edizione Standard" },
+    },
+  ];
+
+  assert.equal(
+    getDisplayFamilyTitle("Acme SoundPro Edizione speciale", variants),
+    "Acme SoundPro Edizione speciale"
+  );
+});
+
+test("compatta il titolo reale realme mantenendo brand e modello", () => {
+  assert.equal(
+    getDisplayFamilyTitle(realmeGt8ProTitle, realmeGt8ProVariants),
+    "realme GT 8 Pro"
+  );
+});
+
 test("ordina le capacità confrontando GB e TB normalizzati", () => {
   assert.deepEqual(
     getAvailableVariantAttributeValues(iphoneVariants, "Size", {}),
@@ -131,6 +245,53 @@ test("ordina la selezione iPhone per capacità e colore", () => {
   assert.equal(
     getVariantDimensionLabel(dimensions[1], iphoneVariants),
     "Colore"
+  );
+});
+
+test("mappa gli attributi tecnici realme senza esporre label raw", () => {
+  const labels = [
+    getVariantDimensionLabel(
+      "MemoryStorageCapacity",
+      realmeGt8ProVariants
+    ),
+    getVariantDimensionLabel(
+      "RamMemoryInstalledSize",
+      realmeGt8ProVariants
+    ),
+  ];
+
+  assert.deepEqual(labels, ["Memoria", "RAM"]);
+  assert.equal(labels.includes("MemoryStorageCapacity"), false);
+  assert.equal(labels.includes("RamMemoryInstalledSize"), false);
+});
+
+test("Size ambiguo non viene presentato come Capacità", () => {
+  assert.equal(
+    getVariantDimensionLabel("Size", realmeGt8ProVariants),
+    "Taglia"
+  );
+});
+
+test("realme evita selector ridondanti e conserva l'exact ASIN", () => {
+  const dimensions = getVariantDimensions(realmeGt8ProVariants);
+
+  assert.deepEqual(
+    getVariantSelectorSteps(realmeGt8ProVariants, dimensions, {}).map(
+      ({ dimension, values }) => ({ dimension, values })
+    ),
+    [{ dimension: "Color", values: ["Bianco", "Blu"] }]
+  );
+  assert.equal(
+    findVariantForSelection(realmeGt8ProVariants, { Color: "Blu" })?.asin,
+    "B0FVXS42GF"
+  );
+  assert.equal(
+    getVariantDescription(realmeGt8ProVariants[0]),
+    "Blu · Memoria: 512 GB · RAM: 16 GB"
+  );
+  assert.equal(
+    getVariantDescription(realmeGt8ProVariants[0]).includes("16+512 Go"),
+    false
   );
 });
 
@@ -338,4 +499,5 @@ test("i selector iPhone conservano combinazioni ed exact ASIN", () => {
 test("il conteggio usa varianti rilevate senza dichiararne la disponibilità", () => {
   assert.equal(getDetectedVariantCountLabel(1), "1 variante rilevata");
   assert.equal(getDetectedVariantCountLabel(5), "5 varianti rilevate");
+  assert.equal(getDetectedVariantCountLabel(9), "9 varianti rilevate");
 });

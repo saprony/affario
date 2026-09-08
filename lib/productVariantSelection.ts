@@ -8,6 +8,11 @@ export type VariantSelectorStep = {
   values: readonly string[];
 };
 
+export const SEARCH_CARD_PRODUCT_TITLE_MAX_LENGTH = 64;
+
+const SEARCH_CARD_PRODUCT_TITLE_FALLBACK = "Prodotto rilevato";
+const ELLIPSIS = "…";
+
 const DIMENSION_PRIORITY = [
   "style",
   "size",
@@ -21,11 +26,18 @@ const DIMENSION_PRIORITY = [
 const ATTRIBUTE_LABELS: Readonly<Record<string, string>> = {
   capacity: "Capacità",
   memory: "Capacità",
+  memorystoragecapacity: "Memoria",
+  rammemoryinstalledsize: "RAM",
   storage: "Capacità",
   color: "Colore",
   colour: "Colore",
   style: "Configurazione",
 };
+
+const LABELED_DETAIL_DIMENSIONS = new Set([
+  "memorystoragecapacity",
+  "rammemoryinstalledsize",
+]);
 
 const ATTRIBUTE_UNIT_TOKENS = new Set([
   "gb",
@@ -176,11 +188,71 @@ function compareAttributeValues(
 }
 
 function getTitlePrefix(title: string): string {
-  const separator = /:\s|;\s|\s[|•]\s|\s[-–—]\s/u.exec(title);
+  const separator = /:\s|;\s|,\s|[|•]|\s[-–—]\s/u.exec(title);
 
   return separator?.index === undefined
     ? title
     : title.slice(0, separator.index);
+}
+
+function abbreviateSearchCardProductTitle(title: string): string {
+  if (title.length <= SEARCH_CARD_PRODUCT_TITLE_MAX_LENGTH) {
+    return title;
+  }
+
+  const contentLimit =
+    SEARCH_CARD_PRODUCT_TITLE_MAX_LENGTH - ELLIPSIS.length;
+  const candidate = title.slice(0, contentLimit + 1);
+  const lastWordBoundary = candidate.lastIndexOf(" ");
+
+  if (lastWordBoundary <= 0) {
+    return `${SEARCH_CARD_PRODUCT_TITLE_FALLBACK}${ELLIPSIS}`;
+  }
+
+  return `${candidate.slice(0, lastWordBoundary)}${ELLIPSIS}`;
+}
+
+function getGigabyteQuantity(value: string | null): number | null {
+  const match = value
+    ?.trim()
+    .replace(",", ".")
+    .match(/^(\d+(?:\.\d+)?)\s*(?:gb|go)$/iu);
+
+  if (!match) {
+    return null;
+  }
+
+  const quantity = Number(match[1]);
+  return Number.isFinite(quantity) ? quantity : null;
+}
+
+function isCombinedSizeRepresentedByKnownAttributes(
+  variant: AffarioProductSearchVariant,
+  dimension: string,
+  value: string
+): boolean {
+  if (normalizeText(dimension) !== "size") {
+    return false;
+  }
+
+  const combinedSize = value
+    .trim()
+    .replace(",", ".")
+    .match(/^(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)\s*(?:gb|go)$/iu);
+  const installedRam = getGigabyteQuantity(
+    getAttributeValue(variant, "RamMemoryInstalledSize")
+  );
+  const storage = getGigabyteQuantity(
+    getAttributeValue(variant, "MemoryStorageCapacity")
+  );
+
+  return (
+    combinedSize !== null &&
+    installedRam !== null &&
+    storage !== null &&
+    Number(combinedSize[1]) === installedRam &&
+    Number(combinedSize[2]) === storage
+  );
 }
 
 function escapeRegularExpression(value: string): string {
@@ -197,20 +269,38 @@ function getFlexibleAttributePattern(value: string): string {
     .join("\\s*");
 }
 
+function getTitleAttributeForms(value: string): string[] {
+  const normalizedValue = value.trim().replace(/\s+/gu, " ");
+  const withoutDescriptivePrefix = normalizedValue
+    .replace(/^con\s+/iu, "")
+    .trim();
+  const canIgnoreDescriptivePrefix =
+    withoutDescriptivePrefix !== normalizedValue &&
+    normalizeText(withoutDescriptivePrefix).split(" ").length >= 2;
+
+  return canIgnoreDescriptivePrefix
+    ? [normalizedValue, withoutDescriptivePrefix]
+    : [normalizedValue];
+}
+
 function getVariableAttributeValues(
   variants: readonly AffarioProductSearchVariant[]
 ): string[] {
-  return getVariantDimensions(variants)
-    .flatMap((dimension) => {
-      const values = getAvailableVariantAttributeValues(
-        variants,
-        dimension,
-        {}
-      );
+  return Array.from(
+    new Set(
+      getVariantDimensions(variants).flatMap((dimension) => {
+        const values = getAvailableVariantAttributeValues(
+          variants,
+          dimension,
+          {}
+        );
 
-      return values.length > 1 ? values : [];
-    })
-    .sort((left, right) => right.length - left.length);
+        return values.length > 1
+          ? values.flatMap(getTitleAttributeForms)
+          : [];
+      })
+    )
+  ).sort((left, right) => right.length - left.length);
 }
 
 export function getVariantDimensions(
@@ -295,6 +385,11 @@ export function getDisplayFamilyTitle(
   variants: readonly AffarioProductSearchVariant[]
 ): string {
   const originalTitle = title.trim().replace(/\s+/g, " ");
+
+  if (!originalTitle) {
+    return SEARCH_CARD_PRODUCT_TITLE_FALLBACK;
+  }
+
   let displayTitle = getTitlePrefix(originalTitle).trim();
   let removedAttribute = true;
   const attributeValues = getVariableAttributeValues(variants);
@@ -318,7 +413,7 @@ export function getDisplayFamilyTitle(
     }
   }
 
-  return displayTitle || originalTitle;
+  return abbreviateSearchCardProductTitle(displayTitle || originalTitle);
 }
 
 export function getAvailableVariantAttributeValues(
@@ -419,9 +514,27 @@ export function getDetectedVariantCountLabel(count: number): string {
 export function getVariantDescription(
   variant: AffarioProductSearchVariant
 ): string {
-  const values = getVariantDimensions([variant])
-    .map((dimension) => getAttributeValue(variant, dimension))
-    .filter((value): value is string => Boolean(value));
+  const variants = [variant];
+  const values = getVariantDimensions(variants).flatMap((dimension) => {
+    const value = getAttributeValue(variant, dimension);
+
+    if (
+      !value ||
+      isCombinedSizeRepresentedByKnownAttributes(
+        variant,
+        dimension,
+        value
+      )
+    ) {
+      return [];
+    }
+
+    const normalizedDimension = normalizeText(dimension);
+
+    return LABELED_DETAIL_DIMENSIONS.has(normalizedDimension)
+      ? [`${getVariantDimensionLabel(dimension, variants)}: ${value}`]
+      : [value];
+  });
 
   return values.length > 0 ? values.join(" · ") : "Variante rilevata";
 }
