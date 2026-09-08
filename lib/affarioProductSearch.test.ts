@@ -17,9 +17,27 @@ import {
   type KeepaProductSearchProviderResult,
 } from "../services/providers/keepaProductSearchProvider";
 import {
+  KEEPA_HTTP_TIMEOUT_MS,
   KeepaClientError,
   type KeepaProductSummary,
 } from "../services/keepaClient";
+import type {
+  DistributedLease,
+  DistributedLeaseClaimResult,
+} from "../services/distributedLease";
+import {
+  createCachedProductSearchProvider,
+  createProductSearchQueryHash,
+  normalizeProductSearchCacheQuery,
+  ProductSearchQueryCacheError,
+  PRODUCT_SEARCH_QUERY_CACHE_LEASE_SECONDS,
+  PRODUCT_SEARCH_QUERY_CACHE_TTL_MS,
+} from "../services/productSearchQueryCache";
+import {
+  createProductSearchQueryCacheStore,
+  PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION,
+  type ProductSearchCachedCandidate,
+} from "../services/productSearchQueryCacheStore";
 import type {
   AffarioExternalProductCandidate,
   AffarioProductSearchFamily,
@@ -120,6 +138,149 @@ function providerResult(
       providerCandidatesReceived: candidates.length,
       tokensConsumed: 10,
       tokensRemaining: 1_000,
+    },
+  };
+}
+
+function validCachedCandidate(
+  overrides: Partial<AffarioExternalProductCandidate> = {}
+): AffarioExternalProductCandidate {
+  return {
+    asin: "B000000001",
+    title: "Example Phone",
+    brand: "Example",
+    model: "EX1",
+    imageUrl: null,
+    parentAsin: null,
+    attributes: {},
+    categories: [],
+    variants: [{ asin: "B000000001", attributes: {} }],
+    ...overrides,
+  };
+}
+
+function validStoredCandidate(): ProductSearchCachedCandidate {
+  const candidate = validCachedCandidate();
+
+  return {
+    asin: candidate.asin,
+    title: candidate.title,
+    brand: candidate.brand,
+    model: candidate.model,
+    imageUrl: candidate.imageUrl,
+    parentAsin: candidate.parentAsin,
+    attributes: candidate.attributes,
+    variants: candidate.variants,
+  };
+}
+
+function createDeferred() {
+  let resolvePromise!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  return { promise, resolve: resolvePromise };
+}
+
+function createCachedProviderHarness(input?: {
+  cachedCandidates?: readonly AffarioExternalProductCandidate[] | null;
+  cacheReadError?: boolean;
+  cacheWriteError?: boolean;
+  leaseResult?: DistributedLeaseClaimResult;
+  providerCandidates?: readonly AffarioExternalProductCandidate[];
+  providerError?: unknown;
+  waitBeforeContentionReread?: () => Promise<void>;
+}) {
+  let cachedCandidates = input?.cachedCandidates ?? null;
+  let cacheReads = 0;
+  let cacheSaves = 0;
+  let providerCalls = 0;
+  let releaseCalls = 0;
+  let latestSave:
+    | {
+        queryHash: string;
+        candidates: readonly AffarioExternalProductCandidate[];
+        fetchedAt: Date;
+        expiresAt: Date;
+      }
+    | undefined;
+  let claimInput:
+    | {
+        resourceType: string;
+        resourceKey: string;
+        leaseSeconds: number;
+      }
+    | undefined;
+  const lease: DistributedLease = {
+    resourceType: "keepa_product_search",
+    resourceKeyHash: "a".repeat(64),
+    ownerToken: "a".repeat(43),
+  };
+  const search = createCachedProductSearchProvider({
+    async loadFresh() {
+      cacheReads += 1;
+
+      if (input?.cacheReadError) {
+        throw new Error("cache read failed");
+      }
+
+      return cachedCandidates === null ? null : { candidates: cachedCandidates };
+    },
+    async save(saveInput) {
+      cacheSaves += 1;
+      latestSave = saveInput;
+
+      if (input?.cacheWriteError) {
+        throw new Error("cache write failed");
+      }
+
+      cachedCandidates = saveInput.candidates;
+    },
+    async searchProvider(query) {
+      providerCalls += 1;
+
+      if (input?.providerError !== undefined) {
+        throw input.providerError;
+      }
+
+      return providerResult(query, input?.providerCandidates ?? []);
+    },
+    async tryClaim(receivedInput) {
+      claimInput = receivedInput;
+      return input?.leaseResult ?? { status: "acquired", lease };
+    },
+    async release() {
+      releaseCalls += 1;
+      return true;
+    },
+    waitBeforeContentionReread:
+      input?.waitBeforeContentionReread ?? (async () => {}),
+    clock: () => new Date("2026-09-08T12:00:00.000Z"),
+  });
+
+  return {
+    search,
+    get cacheReads() {
+      return cacheReads;
+    },
+    get cacheSaves() {
+      return cacheSaves;
+    },
+    get providerCalls() {
+      return providerCalls;
+    },
+    get releaseCalls() {
+      return releaseCalls;
+    },
+    get claimInput() {
+      return claimInput;
+    },
+    get cachedCandidates() {
+      return cachedCandidates;
+    },
+    get latestSave() {
+      return latestSave;
     },
   };
 }
@@ -851,4 +1012,529 @@ test("ranking combinato mantiene un ordine deterministico", () => {
     firstRun.map(({ familyId }) => familyId),
     secondRun.map(({ familyId }) => familyId)
   );
+});
+
+test("cache query normalizza NFKC, case e whitespace senza rimuovere punteggiatura", () => {
+  const equivalentQueries = [
+    "iphone",
+    " iPhone ",
+    "IPHONE",
+    "\uFF49\uFF30\uFF48\uFF4F\uFF2E\uFF45",
+  ];
+  const hashes = equivalentQueries.map(createProductSearchQueryHash);
+
+  assert.equal(normalizeProductSearchCacheQuery("  iPhone\t\n"), "iphone");
+  assert.equal(new Set(hashes).size, 1);
+  assert.match(hashes[0], /^[a-f0-9]{64}$/u);
+  assert.notEqual(
+    createProductSearchQueryHash("iphone-17"),
+    createProductSearchQueryHash("iphone 17")
+  );
+});
+
+test("store persiste soltanto hash e DTO candidati, mai la query raw", async () => {
+  const queryHash = createProductSearchQueryHash("Query Privata iPhone");
+  let writtenRow: unknown;
+  const store = createProductSearchQueryCacheStore({
+    async readRow() {
+      return null;
+    },
+    async writeRow(row) {
+      writtenRow = row;
+    },
+  });
+
+  await store.save({
+    queryHash,
+    candidates: [validCachedCandidate()],
+    fetchedAt: new Date("2026-09-08T12:00:00.000Z"),
+    expiresAt: new Date("2026-09-09T12:00:00.000Z"),
+  });
+
+  const row = writtenRow as Record<string, unknown>;
+  assert.deepEqual(Object.keys(row).sort(), [
+    "candidates",
+    "expires_at",
+    "fetched_at",
+    "payload_version",
+    "query_hash",
+    "result_count",
+  ]);
+  assert.equal(row.query_hash, queryHash);
+  assert.equal(row.payload_version, PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION);
+  assert.equal(row.result_count, 1);
+  assert.equal(
+    "categories" in (row.candidates as Record<string, unknown>[])[0],
+    false
+  );
+  assert.equal("query" in row, false);
+  assert.equal("normalized_query" in row, false);
+  assert.equal("raw_query" in row, false);
+});
+
+test("store considera una fresh empty array un cache hit valido", async () => {
+  const queryHash = createProductSearchQueryHash("iphone");
+  const store = createProductSearchQueryCacheStore({
+    async readRow() {
+      return {
+        query_hash: queryHash,
+        payload_version: PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION,
+        candidates: [],
+        result_count: 0,
+        fetched_at: "2026-09-08T12:00:00.000Z",
+        expires_at: "2026-09-09T12:00:00.000Z",
+      };
+    },
+    async writeRow() {},
+  });
+
+  const cached = await store.loadFresh(
+    queryHash,
+    new Date("2026-09-08T13:00:00.000Z")
+  );
+
+  assert.deepEqual(cached?.candidates, []);
+});
+
+test("store non usa payload corrotti o versioni sconosciute", async () => {
+  const queryHash = createProductSearchQueryHash("iphone");
+  const baseRow = {
+    query_hash: queryHash,
+    payload_version: PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION,
+    candidates: [validStoredCandidate()],
+    result_count: 1,
+    fetched_at: "2026-09-08T12:00:00.000Z",
+    expires_at: "2026-09-09T12:00:00.000Z",
+  };
+
+  for (const row of [
+    { ...baseRow, candidates: { invalid: true } },
+    { ...baseRow, candidates: [{ rawKeepaObject: true }] },
+    { ...baseRow, result_count: 2 },
+    { ...baseRow, payload_version: 2 },
+  ]) {
+    const store = createProductSearchQueryCacheStore({
+      async readRow() {
+        return row;
+      },
+      async writeRow() {},
+    });
+
+    assert.equal(
+      await store.loadFresh(
+        queryHash,
+        new Date("2026-09-08T13:00:00.000Z")
+      ),
+      null
+    );
+  }
+});
+
+test("cache stale viene rinfrescata dal provider con TTL esatto di 24 ore", async () => {
+  const queryHash = createProductSearchQueryHash("iphone");
+  const cachedCandidate = validStoredCandidate();
+  const liveCandidate = validCachedCandidate();
+  let saveInput:
+    | {
+        fetchedAt: Date;
+        expiresAt: Date;
+      }
+    | undefined;
+  let providerCalls = 0;
+  const store = createProductSearchQueryCacheStore({
+    async readRow() {
+      return {
+        query_hash: queryHash,
+        payload_version: PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION,
+        candidates: [cachedCandidate],
+        result_count: 1,
+        fetched_at: "2026-09-07T11:59:59.000Z",
+        expires_at: "2026-09-08T11:59:59.000Z",
+      };
+    },
+    async writeRow(row) {
+      saveInput = {
+        fetchedAt: new Date(row.fetched_at),
+        expiresAt: new Date(row.expires_at),
+      };
+    },
+  });
+  const search = createCachedProductSearchProvider({
+    loadFresh: store.loadFresh,
+    save: store.save,
+    async searchProvider(query) {
+      providerCalls += 1;
+      return providerResult(query, [liveCandidate]);
+    },
+    async tryClaim() {
+      return {
+        status: "acquired",
+        lease: {
+          resourceType: "keepa_product_search",
+          resourceKeyHash: "a".repeat(64),
+          ownerToken: "a".repeat(43),
+        },
+      };
+    },
+    async release() {
+      return true;
+    },
+    async waitBeforeContentionReread() {},
+    clock: () => new Date("2026-09-08T12:00:00.000Z"),
+  });
+
+  await search("iphone");
+
+  assert.equal(providerCalls, 1);
+  assert.equal(
+    saveInput!.expiresAt.getTime() - saveInput!.fetchedAt.getTime(),
+    PRODUCT_SEARCH_QUERY_CACHE_TTL_MS
+  );
+  assert.equal(PRODUCT_SEARCH_QUERY_CACHE_TTL_MS, 86_400_000);
+  assert.ok(
+    PRODUCT_SEARCH_QUERY_CACHE_LEASE_SECONDS * 1_000 >
+      KEEPA_HTTP_TIMEOUT_MS
+  );
+});
+
+test("fresh cache hit evita provider e usa lease zero volte", async () => {
+  const cachedCandidate = validCachedCandidate();
+  const harness = createCachedProviderHarness({
+    cachedCandidates: [cachedCandidate],
+  });
+
+  const result = await harness.search("iphone");
+
+  assert.equal(harness.cacheReads, 1);
+  assert.equal(harness.providerCalls, 0);
+  assert.equal(harness.cacheSaves, 0);
+  assert.equal(harness.claimInput, undefined);
+  assert.equal(result.serverReport.externalRequests, 0);
+  assert.equal(result.serverReport.tokensConsumed, 0);
+  assert.deepEqual(result.data.candidates, [cachedCandidate]);
+});
+
+test("fresh cache vuota evita comunque il provider", async () => {
+  const harness = createCachedProviderHarness({ cachedCandidates: [] });
+  const result = await harness.search("nessun risultato");
+
+  assert.equal(harness.providerCalls, 0);
+  assert.equal(harness.cacheSaves, 0);
+  assert.deepEqual(result.data.candidates, []);
+});
+
+test("cache miss esegue una provider search e salva anche zero risultati", async () => {
+  const harness = createCachedProviderHarness({ providerCandidates: [] });
+  const result = await harness.search("iphone");
+
+  assert.equal(harness.providerCalls, 1);
+  assert.equal(harness.cacheSaves, 1);
+  assert.deepEqual(harness.cachedCandidates, []);
+  assert.equal(result.serverReport.externalRequests, 1);
+  assert.equal(
+    harness.latestSave!.expiresAt.getTime() -
+      harness.latestSave!.fetchedAt.getTime(),
+    PRODUCT_SEARCH_QUERY_CACHE_TTL_MS
+  );
+  assert.equal(
+    harness.claimInput?.resourceKey,
+    `search:${createProductSearchQueryHash("iphone")}`
+  );
+  assert.equal(
+    harness.claimInput?.leaseSeconds,
+    PRODUCT_SEARCH_QUERY_CACHE_LEASE_SECONDS
+  );
+});
+
+test("errore provider non viene mai cacheato", async () => {
+  const providerError = new KeepaClientError(
+    "provider unavailable",
+    "NETWORK_ERROR"
+  );
+  const harness = createCachedProviderHarness({ providerError });
+
+  await assert.rejects(
+    harness.search("iphone"),
+    (error) => error === providerError
+  );
+  assert.equal(harness.providerCalls, 1);
+  assert.equal(harness.cacheSaves, 0);
+  assert.equal(harness.releaseCalls, 1);
+});
+
+test("richieste concorrenti uguali producono al massimo una provider search", async () => {
+  const providerStarted = createDeferred();
+  const providerMayFinish = createDeferred();
+  const cacheReady = createDeferred();
+  const cachedCandidate = validCachedCandidate();
+  let cache: readonly AffarioExternalProductCandidate[] | null = null;
+  let leaseHeld = false;
+  let providerCalls = 0;
+  const search = createCachedProductSearchProvider({
+    async loadFresh() {
+      return cache === null ? null : { candidates: cache };
+    },
+    async save(input) {
+      cache = input.candidates;
+      cacheReady.resolve();
+    },
+    async searchProvider(query) {
+      providerCalls += 1;
+      providerStarted.resolve();
+      await providerMayFinish.promise;
+      return providerResult(query, [cachedCandidate]);
+    },
+    async tryClaim(): Promise<DistributedLeaseClaimResult> {
+      if (leaseHeld) {
+        return { status: "contended" };
+      }
+
+      leaseHeld = true;
+      return {
+        status: "acquired",
+        lease: {
+          resourceType: "keepa_product_search",
+          resourceKeyHash: "a".repeat(64),
+          ownerToken: "a".repeat(43),
+        },
+      };
+    },
+    async release() {
+      leaseHeld = false;
+      return true;
+    },
+    waitBeforeContentionReread: () => cacheReady.promise,
+    clock: () => new Date("2026-09-08T12:00:00.000Z"),
+  });
+
+  const first = search("iphone");
+  await providerStarted.promise;
+  const second = search(" iPhone ");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  providerMayFinish.resolve();
+
+  const results = await Promise.all([first, second]);
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(
+    results.map(({ serverReport }) => serverReport.externalRequests),
+    [1, 0]
+  );
+});
+
+test("lease loser senza cache non chiama mai il provider", async () => {
+  const harness = createCachedProviderHarness({
+    leaseResult: { status: "contended" },
+  });
+
+  await assert.rejects(
+    harness.search("iphone"),
+    (error: unknown) =>
+      error instanceof ProductSearchQueryCacheError &&
+      error.code === "LEASE_CONTENDED" &&
+      error.externalRequests === 0
+  );
+  assert.equal(harness.cacheReads, 2);
+  assert.equal(harness.providerCalls, 0);
+  assert.equal(harness.cacheSaves, 0);
+});
+
+test("cache hit provider-only conserva source pubblico KEEPA", async () => {
+  const cachedProvider = createCachedProviderHarness({
+    cachedCandidates: [
+      candidate({
+        asin: "B0CACHE001",
+        title: "Apple iPhone 16",
+        brand: "Apple",
+        model: "IPHONE16",
+      }),
+    ],
+  });
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, []),
+    searchProvider: cachedProvider.search,
+  });
+
+  const result = await search("iphone");
+
+  assert.equal(result.data.source, "KEEPA");
+  assert.equal(cachedProvider.providerCalls, 0);
+  assert.equal(result.serverReport.externalRequests, 0);
+});
+
+test("cache hit unita al catalogo locale conserva merge e source HYBRID", async () => {
+  const localIphone = family({
+    familyId: "LOCAL-IPHONE-17",
+    title: "Apple iPhone 17 Pro",
+    brand: "Apple",
+    model: "IPHONE17PRO",
+    representativeAsin: "B0IPHONE17",
+  });
+  const cachedProvider = createCachedProviderHarness({
+    cachedCandidates: [
+      candidate({
+        asin: "B0CACHE001",
+        title: "Apple iPhone 16",
+        brand: "Apple",
+        model: "IPHONE16",
+      }),
+    ],
+  });
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, [localIphone]),
+    searchProvider: cachedProvider.search,
+  });
+
+  const result = await search("iphone");
+
+  assert.equal(result.data.source, "HYBRID");
+  assert.deepEqual(result.data.families.map(({ title }) => title), [
+    "Apple iPhone 17 Pro",
+    "Apple iPhone 16",
+  ]);
+  assert.equal(cachedProvider.providerCalls, 0);
+});
+
+test("exact ASIN e strong identity locali non leggono la query cache", async () => {
+  const iphone = family({
+    familyId: "LOCAL-IPHONE-17",
+    title: "Apple iPhone 17 Pro",
+    brand: "Apple",
+    model: "IPHONE17PRO",
+    representativeAsin: "B0IPHONE01",
+  });
+  const sony = family({
+    familyId: "LOCAL-SONY-XM5",
+    title: "Sony WH-1000XM5 Cuffie Wireless",
+    brand: "Sony",
+    model: "WH1000XM5B.CE7",
+    representativeAsin: "B09Y2MYL5C",
+  });
+  const cachedProvider = createCachedProviderHarness({ cachedCandidates: [] });
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => {
+      const prepared = prepareAffarioProductSearchQuery(query);
+      return localResult(
+        query,
+        rankAffarioProductFamilies(prepared, [iphone, sony])
+      );
+    },
+    searchProvider: cachedProvider.search,
+  });
+
+  await search("B0IPHONE01");
+  const sonyResult = await search("Sony WH-1000XM5");
+
+  assert.equal(cachedProvider.cacheReads, 0);
+  assert.equal(cachedProvider.providerCalls, 0);
+  assert.deepEqual(sonyResult.data.families.map(({ familyId }) => familyId), [
+    "LOCAL-SONY-XM5",
+  ]);
+});
+
+test("cache read failure degrada a local-only ma senza locale resta unavailable", async () => {
+  const localIphone = family({
+    familyId: "LOCAL-IPHONE-17",
+    title: "Apple iPhone 17 Pro",
+    brand: "Apple",
+    model: "IPHONE17PRO",
+    representativeAsin: "B0IPHONE01",
+  });
+  const localHarness = createCachedProviderHarness({ cacheReadError: true });
+  const localSearch = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, [localIphone]),
+    searchProvider: localHarness.search,
+  });
+  const noLocalHarness = createCachedProviderHarness({ cacheReadError: true });
+  const noLocalSearch = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, []),
+    searchProvider: noLocalHarness.search,
+  });
+
+  const localResponse = await localSearch("iphone");
+
+  assert.equal(localResponse.data.source, "AFFARIO_CATALOG");
+  assert.equal(localResponse.serverReport.externalRequests, 0);
+  assert.equal(localHarness.providerCalls, 0);
+  await assert.rejects(
+    noLocalSearch("iphone"),
+    (error: unknown) =>
+      error instanceof ProductSearchQueryCacheError &&
+      error.code === "CACHE_READ_FAILED"
+  );
+  assert.equal(noLocalHarness.providerCalls, 0);
+});
+
+test("provider failure e cache write failure applicano fallback conservativo", async () => {
+  const localIphone = family({
+    familyId: "LOCAL-IPHONE-17",
+    title: "Apple iPhone 17 Pro",
+    brand: "Apple",
+    model: "IPHONE17PRO",
+    representativeAsin: "B0IPHONE01",
+  });
+  const providerFailure = createCachedProviderHarness({
+    providerError: new KeepaClientError(
+      "provider unavailable",
+      "NETWORK_ERROR"
+    ),
+  });
+  const writeFailure = createCachedProviderHarness({
+    cacheWriteError: true,
+    providerCandidates: [validCachedCandidate()],
+  });
+
+  for (const harness of [providerFailure, writeFailure]) {
+    const search = createAffarioProductSearchWithFallback({
+      searchLocal: async (query) => localResult(query, [localIphone]),
+      searchProvider: harness.search,
+    });
+    const result = await search("iphone");
+
+    assert.equal(result.data.source, "AFFARIO_CATALOG");
+    assert.equal(result.serverReport.externalRequests, 1);
+  }
+
+  const noLocalSearch = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, []),
+    searchProvider: writeFailure.search,
+  });
+  await assert.rejects(
+    noLocalSearch("iphone"),
+    (error: unknown) =>
+      error instanceof ProductSearchQueryCacheError &&
+      error.code === "CACHE_WRITE_FAILED"
+  );
+  assert.equal(writeFailure.releaseCalls, 0);
+});
+
+test("tutti i candidati cached vengono rivalutati prima del top 10", async () => {
+  const cachedCandidates = Array.from({ length: 20 }, (_, index) =>
+    candidate({
+      asin: `B0CCH${String(index).padStart(5, "0")}`,
+      title:
+        index < 10
+          ? `Unrelated device ${index}`
+          : `Target cached product ${index}`,
+      brand: index < 10 ? "Other" : "Target",
+      model: `M${index}`,
+      parentAsin: `CACHED-PARENT-${index}`,
+    })
+  );
+  const cachedProvider = createCachedProviderHarness({ cachedCandidates });
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, []),
+    searchProvider: cachedProvider.search,
+  });
+
+  const result = await search("target");
+
+  assert.equal(result.serverReport.providerCandidatesConsidered, 20);
+  assert.equal(result.data.families.length, 10);
+  assert.equal(
+    result.data.families.every(({ title }) =>
+      title.startsWith("Target cached")
+    ),
+    true
+  );
+  assert.equal(cachedProvider.providerCalls, 0);
 });

@@ -17,10 +17,10 @@ import type {
 const AMAZON_IMAGE_BASE_URL = "https://m.media-amazon.com/images/I/";
 
 export type KeepaProductSearchServerReport = {
-  externalRequests: 1;
+  externalRequests: 0 | 1;
   providerCandidatesReceived: number;
   tokensConsumed: number;
-  tokensRemaining: number;
+  tokensRemaining?: number;
 };
 
 export type KeepaProductSearchProviderResult = {

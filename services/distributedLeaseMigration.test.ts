@@ -15,6 +15,30 @@ const REFRESH_COORDINATOR_PATH = resolve(
   process.cwd(),
   "services/exactAsinRefreshLease.ts"
 );
+const PRODUCT_SEARCH_CACHE_MIGRATION_PATH = resolve(
+  process.cwd(),
+  "supabase/migrations/20260908000000_create_product_search_query_cache.sql"
+);
+const PRODUCT_SEARCH_CACHE_PATH = resolve(
+  process.cwd(),
+  "services/productSearchQueryCache.ts"
+);
+const PRODUCT_SEARCH_CACHE_STORE_PATH = resolve(
+  process.cwd(),
+  "services/productSearchQueryCacheStore.ts"
+);
+const PRODUCT_SEARCH_ORCHESTRATOR_PATH = resolve(
+  process.cwd(),
+  "services/affarioProductSearchWithFallback.ts"
+);
+const PRODUCT_SEARCH_TYPES_PATH = resolve(
+  process.cwd(),
+  "types/productSearch.ts"
+);
+const PRODUCT_SEARCH_ROUTE_PATH = resolve(
+  process.cwd(),
+  "app/api/search/products/route.ts"
+);
 
 function loadMigration(): string {
   return readFileSync(MIGRATION_PATH, "utf8");
@@ -101,4 +125,95 @@ test("implementazione resta server-only e non mantiene lock DB durante il refres
   assert.ok(claimIndex >= 0);
   assert.ok(refreshIndex > claimIndex);
   assert.doesNotMatch(leaseService, /\b(begin|commit|rollback)\b/i);
+});
+
+test("migration query cache applica schema, TTL fields e coerenza del payload", () => {
+  const sql = readFileSync(PRODUCT_SEARCH_CACHE_MIGRATION_PATH, "utf8");
+
+  assert.match(sql, /create table public\.product_search_query_cache/i);
+  assert.match(sql, /query_hash text primary key/i);
+  assert.match(sql, /query_hash ~ '\^\[a-f0-9\]\{64\}\$'/i);
+  assert.match(sql, /payload_version smallint not null/i);
+  assert.match(sql, /payload_version > 0/i);
+  assert.match(sql, /candidates jsonb not null/i);
+  assert.match(sql, /jsonb_typeof\(candidates\) = 'array'/i);
+  assert.match(sql, /result_count integer not null/i);
+  assert.match(sql, /result_count >= 0/i);
+  assert.match(sql, /result_count = jsonb_array_length\(candidates\)/i);
+  assert.match(sql, /fetched_at timestamptz not null/i);
+  assert.match(sql, /expires_at timestamptz not null/i);
+  assert.match(sql, /expires_at > fetched_at/i);
+  assert.match(
+    sql,
+    /create index product_search_query_cache_expires_at_idx[\s\S]*\(expires_at\)/i
+  );
+});
+
+test("query cache DB resta server-only con grant service_role minimi", () => {
+  const sql = readFileSync(PRODUCT_SEARCH_CACHE_MIGRATION_PATH, "utf8");
+
+  assert.match(
+    sql,
+    /product_search_query_cache enable row level security/i
+  );
+  assert.doesNotMatch(sql, /create\s+policy/i);
+  assert.match(
+    sql,
+    /revoke all on table public\.product_search_query_cache[\s\S]*from public, anon, authenticated, service_role/i
+  );
+  assert.match(
+    sql,
+    /grant select, insert, update on table public\.product_search_query_cache[\s\S]*to service_role/i
+  );
+  assert.doesNotMatch(
+    sql,
+    /grant\s+(?:all|delete|truncate|references|trigger|maintain)\b[\s\S]*on table public\.product_search_query_cache/i
+  );
+  assert.doesNotMatch(sql, /security\s+definer/i);
+  assert.doesNotMatch(sql, /default privileges/i);
+});
+
+test("query cache non definisce colonne raw query, prezzo o payload Keepa", () => {
+  const sql = readFileSync(PRODUCT_SEARCH_CACHE_MIGRATION_PATH, "utf8");
+
+  assert.doesNotMatch(
+    sql,
+    /\b(raw_query|normalized_query|query_text|email|ip_address|account_id|token_balance|server_report|raw_keepa|price_history|current_price)\b/i
+  );
+});
+
+test("product search riusa le lease esistenti senza Product lookup", () => {
+  const cache = readFileSync(PRODUCT_SEARCH_CACHE_PATH, "utf8");
+  const store = readFileSync(PRODUCT_SEARCH_CACHE_STORE_PATH, "utf8");
+  const orchestrator = readFileSync(PRODUCT_SEARCH_ORCHESTRATOR_PATH, "utf8");
+
+  assert.match(cache, /^import "server-only";/);
+  assert.match(store, /^import "server-only";/);
+  assert.match(cache, /tryClaimDistributedLease/);
+  assert.match(cache, /releaseDistributedLease/);
+  assert.match(cache, /resourceKey: `search:\$\{queryHash\}`/);
+  assert.match(cache, /PRODUCT_SEARCH_QUERY_CACHE_LEASE_SECONDS = 60/);
+  assert.match(cache, /PRODUCT_SEARCH_QUERY_CACHE_CONTENTION_WAIT_MS = 250/);
+  assert.match(orchestrator, /searchKeepaProductCandidatesWithCache/);
+  assert.doesNotMatch(
+    `${cache}\n${store}\n${orchestrator}`,
+    /getAffarioProductByAsin|\/api\/products\/|persistKeepaProduct/
+  );
+  assert.doesNotMatch(`${cache}\n${store}`, /redis|pg_advisory/i);
+});
+
+test("source pubblico resta il contratto C1 senza HIT o MISS", () => {
+  const types = readFileSync(PRODUCT_SEARCH_TYPES_PATH, "utf8");
+  const route = readFileSync(PRODUCT_SEARCH_ROUTE_PATH, "utf8");
+
+  assert.match(
+    types,
+    /source: "AFFARIO_CATALOG" \| "KEEPA" \| "HYBRID"/
+  );
+  assert.doesNotMatch(
+    types,
+    /KEEPA_CACHE|CACHE_HIT|CACHE_MISS|\bHIT\b|\bMISS\b/
+  );
+  assert.match(route, /const \{ data \} = await searchAffarioProductsWithFallback/);
+  assert.doesNotMatch(route, /serverReport\s*[,}]/);
 });

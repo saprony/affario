@@ -10,9 +10,12 @@ import {
 } from "@/lib/affarioProductSearch";
 import { searchAffarioProducts } from "@/services/affarioProductSearch";
 import {
-  searchKeepaProductCandidates,
   type KeepaProductSearchProviderResult,
 } from "@/services/providers/keepaProductSearchProvider";
+import {
+  ProductSearchQueryCacheError,
+  searchKeepaProductCandidatesWithCache,
+} from "@/services/productSearchQueryCache";
 import type {
   AffarioProductSearchFamily,
   AffarioProductSearchResult,
@@ -169,10 +172,15 @@ export function createAffarioProductSearchWithFallback(
     let providerResult: KeepaProductSearchProviderResult;
 
     try {
-      providerResult = await dependencies.searchProvider(localResult.query);
+      providerResult = await dependencies.searchProvider(query);
     } catch (error) {
       if (localResult.results.length > 0) {
-        return localOnlyResponse(localResult, 1);
+        return localOnlyResponse(
+          localResult,
+          error instanceof ProductSearchQueryCacheError
+            ? error.externalRequests
+            : 1
+        );
       }
 
       throw error;
@@ -222,5 +230,5 @@ export function createAffarioProductSearchWithFallback(
 export const searchAffarioProductsWithFallback =
   createAffarioProductSearchWithFallback({
     searchLocal: searchAffarioProducts,
-    searchProvider: searchKeepaProductCandidates,
+    searchProvider: searchKeepaProductCandidatesWithCache,
   });

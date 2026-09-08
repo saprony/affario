@@ -17,6 +17,7 @@ import {
 } from "@/services/affarioProductSearch";
 import { searchAffarioProductsWithFallback } from "@/services/affarioProductSearchWithFallback";
 import { KeepaClientError } from "@/services/keepaClient";
+import { ProductSearchQueryCacheError } from "@/services/productSearchQueryCache";
 import {
   getKeepaRetryAfterSeconds,
   TEMPORARY_PRODUCT_DATA_MESSAGE,
@@ -80,6 +81,14 @@ function mapError(
       error.code === "OUT_OF_TOKENS"
         ? getKeepaRetryAfterSeconds(error)
         : undefined
+    );
+  }
+
+  if (error instanceof ProductSearchQueryCacheError) {
+    return errorResponse(
+      "SERVICE_UNAVAILABLE",
+      SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
+      503
     );
   }
 
