@@ -51,7 +51,7 @@ export default function Hero({
             onChange={(event) => setQuery(event.target.value)}
             type="search"
             aria-label="Prodotto da cercare"
-            placeholder="Che prodotto stai pensando di comprare?"
+            placeholder="Cerca un prodotto"
             className="min-w-0 flex-1 rounded-xl border border-gray-200 p-4 text-base outline-none focus:border-green-600"
           />
 
