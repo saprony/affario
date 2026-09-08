@@ -109,6 +109,7 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
+- La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: i titoli delle search card sono abbreviati esclusivamente a livello presentazionale e non incorporano suffissi che coincidono con valori variante variabili; gli attributi tecnici osservati `MemoryStorageCapacity` e `RamMemoryInstalledSize` usano le label consumer **Memoria** e **RAM**, con deduplicazione conservativa del riepilogo.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
 - La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
@@ -413,8 +414,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047A.4 / 047A.4B | **DECISIONE QA REGISTRATA** — 047A-010 chiuso/non applicabile; 047A-013 confermato e rinviato post-go-live/V1.1 con design indicizzato definito ma non implementato |
 | 047A.5 | **COMPLETATA E VALIDATA LOCALMENTE + MANUAL QA PASS** — 047A-014/015/016 chiusi; titoli alert user-facing abbreviati, copy 429/503 uniformate, affiliate footer rifinito e preview protette in Production |
 | 047B.2A | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — integrità del variant selector ripristinata; dimensioni singleton non obbligatorie, selezione solo esplicita, exact ASIN preservato e copy “varianti rilevate” |
+| 047B.2B | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — 047B-005/006 chiusi; titoli famiglia compatti nelle search card, mapping consumer Memoria/RAM e deduplicazione conservativa degli attributi |
 
-Totale associazioni registrate: **44**.
+Totale associazioni registrate: **45**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -984,12 +986,75 @@ Il safety check certifica:
 - Il test copre esplicitamente le varianti Sony rilevate ma non materializzate.
 - Nessuna chiamata Keepa è stata effettuata durante implementazione e QA
   tecnica. Monitoring e Cron restano OFF.
-- Restano separati: **047B-003 MEDIUM** placeholder mobile troncato;
-  **047B-004 LOW** preload warnings development; **047B-005 MEDIUM** titoli
-  Amazon troppo lunghi nelle card; **047B-006 MEDIUM** attributi variante
-  user-unfriendly/ridondanti; **047B-007 LOW/NOTE** ricerca tecnica exact ASIN
-  senza preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente;
-  **047B-009 MEDIUM** search relevance troppo ampia.
+- Stato successivo: **047B-005** e **047B-006** sono stati chiusi dalla
+  Funzione 047B.2B. Restano separati **047B-003 MEDIUM**, **047B-004 LOW**,
+  **047B-007 LOW/NOTE**, **047B-008 MEDIUM**, **047B-009 MEDIUM/HIGH** e
+  **047B-011 HIGH**.
+
+### 12.10 FUNZIONE 047B.2B — PRODUCT TITLES + USER-FACING ATTRIBUTES
+
+- Stato: **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**.
+- Commit di implementazione:
+  `5560afaeffbe72febf0443a94390f071fd2360e4`
+  (`fix: improve product titles and variant labels`).
+
+#### 047B-005 — PRODUCT TITLES
+
+- Stato: **CLOSED**. Il problema era l'uso nelle search card di titoli Amazon
+  raw troppo lunghi, con forte impatto sulla leggibilità mobile.
+- La correzione è esclusivamente presentazionale. Titolo raw nel database,
+  ranking, DTO API, persistenza e utility alert/email restano invariati.
+- Il display title conserva un titolo breve su brand e modello e rimuove in
+  modo conservativo un suffisso che coincide con un valore di una dimensione
+  variante che cambia tra gli ASIN della famiglia. Il confronto può ignorare
+  il prefisso descrittivo iniziale `Con ` soltanto quando la corrispondenza del
+  suffisso resta sufficientemente certa.
+- Non esistono hardcode per Sony, modelli o ASIN.
+- Casi verificati: realme passa dal titolo Amazon esteso a **realme GT 8 Pro**;
+  Sony passa da **Sony WH-1000XM5 Custodia Rigida ...** a **Sony
+  WH-1000XM5**; **Apple iPhone 17 Pro** resta invariato.
+
+#### 047B-006 — USER-FACING VARIANT ATTRIBUTES
+
+- Stato: **CLOSED**. Gli attributi tecnici e ridondanti nella UI consumer sono
+  presentati tramite il mapping V1: `Color` → **Colore**, `Style` →
+  **Configurazione**, `MemoryStorageCapacity` → **Memoria** e
+  `RamMemoryInstalledSize` → **RAM**.
+- Un `Size` chiaramente storage-like, per esempio 256 GB, 512 GB o 1 TB, usa
+  **Capacità**. Un valore ambiguo come `16+512 Go` non viene presentato
+  falsamente come Capacità.
+- La deduplicazione è conservativa: `Size=16+512 Go` viene omesso dal riepilogo
+  consumer soltanto quando coincide esattamente con `RAM=16 GB` e
+  `Memoria=512 GB`. Se la corrispondenza non è certa, il dato non viene
+  eliminato arbitrariamente.
+- Attributi e valori interni, exact ASIN e selector integrity della Funzione
+  047B.2A restano invariati.
+
+#### Manual QA e validazione
+
+- Viewport manuale: 390 px.
+- **Realme: PASS.** Titolo **realme GT 8 Pro**, selector **Colore**, riepilogo
+  **Blu · Memoria: 512 GB · RAM: 16 GB**, nessuna label raw o duplicazione
+  `16+512 Go`, CTA **Analizza il prezzo** presente.
+- **Sony: PASS.** Titolo famiglia **Sony WH-1000XM5**, cinque varianti
+  rilevate, Configurazione Morbida/Rigida invariata e nessuna regressione
+  047B.2A.
+- **iPhone: PASS.** Titolo **Apple iPhone 17 Pro**, Capacità/Colore, exact ASIN
+  e selector integrity invariati.
+- `git diff --check` PASS; lint PASS; typecheck PASS; 261/261 test PASS; build
+  PASS; `npm audit` PASS con zero vulnerabilità.
+- Monitoring e Cron restano OFF.
+
+#### Finding residui e priorità
+
+- Restano: **047B-003 MEDIUM** placeholder mobile troncato; **047B-004 LOW**
+  preload warnings development; **047B-007 LOW/NOTE** exact ASIN search senza
+  preselezione variante; **047B-008 MEDIUM** focus-visible poco evidente;
+  **047B-009 MEDIUM/HIGH** search relevance troppo ampia su query specifiche;
+  **047B-011 HIGH** ricerca generica incompleta, perché query come `iphone` o
+  `realme` si fermano ai match del catalogo locale e non esplorano il catalogo
+  provider.
+- Prossima funzione prioritaria: **047B.2C — SEARCH RELEVANCE + COMPLETENESS**.
 
 ## 13. Necessario prima del go-live
 
@@ -1067,14 +1132,22 @@ Le decisioni seguenti restano nella storia ma sono superate:
   aperto post-go-live/V1.1 e non blocca la V1; la differenza tra prefix
   matching locale ed esterno richiede una decisione separata prima della
   futura implementazione della ricerca indicizzata.
+- I finding **047B-009 MEDIUM/HIGH** e **047B-011 HIGH** restano aperti: la
+  relevance è troppo ampia su alcune query specifiche e le query generiche con
+  match locali non esplorano il catalogo provider.
 
 ## 17. Prossimo passo
 
+- La prossima funzione prioritaria è **047B.2C — SEARCH RELEVANCE +
+  COMPLETENESS**, dedicata ai finding aperti 047B-009 e 047B-011.
+- La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA
+  PASS** nel commit `5560afaeffbe72febf0443a94390f071fd2360e4`;
+  047B-005 e 047B-006 sono chiusi senza modificare dati raw, ranking, API,
+  persistenza o utility alert/email.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA
   PASS** nel commit `f9fe86c6022766e298abea421864187b2f923289`.
   Il finding 047B-010 è chiuso; selector dinamici, varianti rilevate non
-  materializzate ed exact ASIN sono coperti da test e QA manuale. I finding
-  047B-003/004/005/006/007/008/009 restano separati.
+  materializzate ed exact ASIN sono coperti da test e QA manuale.
 - La **FUNZIONE 047A.5 è completata e validata localmente con manual QA PASS**
   nel commit `604cefbd6c3a005bec72442cf0008ae221ed5603`: 047A-014, 047A-015 e
   047A-016 sono chiusi. Le preview alert restano fixture esclusivamente
