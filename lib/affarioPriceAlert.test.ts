@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -18,6 +19,10 @@ import {
   SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE,
   TOO_MANY_REQUESTS_MESSAGE,
 } from "./consumerServiceMessages";
+import {
+  AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+  isAffarioPriceAlertCreationEnabled,
+} from "./affarioPublicMode";
 
 const availableSavings: AffarioSavingsPotential = {
   status: "AVAILABLE",
@@ -319,4 +324,31 @@ test("distingue successo con conferma email e alert duplicato", async () => {
     confirmationEmailSent: false,
     alertStatus: "pending_confirmation",
   });
+});
+
+test("la creazione alert è fail-closed in review prima di ogni elaborazione", () => {
+  assert.equal(isAffarioPriceAlertCreationEnabled("review"), false);
+  assert.equal(
+    AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+    "Gli alert automatici saranno disponibili prossimamente."
+  );
+
+  const routeSource = readFileSync(
+    new URL("../app/api/alerts/route.ts", import.meta.url),
+    "utf8"
+  );
+  const gateIndex = routeSource.indexOf(
+    "if (!isAffarioPriceAlertCreationEnabled())"
+  );
+  const requestParsingIndex = routeSource.indexOf(
+    "body = await readJsonRequestBody(request)"
+  );
+
+  assert.ok(gateIndex >= 0);
+  assert.ok(requestParsingIndex > gateIndex);
+  assert.match(routeSource, /"ALERT_NOT_AVAILABLE"[\s\S]*503/u);
+});
+
+test("in full il gate lascia invariato il flusso alert esistente", () => {
+  assert.equal(isAffarioPriceAlertCreationEnabled("full"), true);
 });

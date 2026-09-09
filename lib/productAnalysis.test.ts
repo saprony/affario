@@ -9,6 +9,11 @@ import {
   requestProductAnalysisOnce,
   type ProductAnalysisRequester,
 } from "./productAnalysis";
+import { resolveAffarioPublicMode } from "./affarioPublicMode";
+import {
+  getPublicProductAnalysisData,
+  type AffarioFullProductAnalysisApiData,
+} from "./publicProductAnalysis";
 import type { AffarioAdvice } from "../types/affarioAdvice";
 import type {
   AffarioProductAnalysisData,
@@ -145,6 +150,7 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
     "buyBox",
     "lastBuyBoxUpdate",
     "priceHistory90Days",
+    "publicMode",
     "savingsPotential",
   ]);
   assert.equal("lastKeepaCheckAt" in result, false);
@@ -177,6 +183,7 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
 
 test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
   const baseData = {
+    publicMode: "full" as const,
     asin: "B0FQGPJCJK",
     buyBox: { status: "AVAILABLE" as const, currentPrice: 1169 },
     lastBuyBoxUpdate: "2026-08-24T08:05:00.000Z",
@@ -301,6 +308,7 @@ test("NOT_APPLICABLE non espone importo o target consumer", () => {
     },
   }).data;
   const presentation = getProductAnalysisPresentation({
+    publicMode: "full",
     asin: payload.asin,
     buyBox: payload.buyBox,
     lastBuyBoxUpdate: payload.lastBuyBoxUpdate,
@@ -386,6 +394,7 @@ test("formatta lastBuyBoxUpdate nella timezone Europe/Rome", () => {
 
 test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
   const data = {
+    publicMode: "full" as const,
     asin: "B0FQGPJCJK",
     buyBox: { status: "UNAVAILABLE" as const, currentPrice: null },
     lastBuyBoxUpdate: "2026-08-24T08:05:00.000Z",
@@ -421,4 +430,162 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
   assert.equal(presentation.savingsPotential, null);
   assert.equal(presentation.minimum90Days, "1.099,00 €");
   assert.equal(presentation.average90Days, "1.210,50 €");
+});
+
+test("risolve i default production/review e development/full con override esplicito", () => {
+  assert.equal(
+    resolveAffarioPublicMode({ nodeEnv: "production" }),
+    "review"
+  );
+  assert.equal(
+    resolveAffarioPublicMode({ nodeEnv: "development" }),
+    "full"
+  );
+  assert.equal(
+    resolveAffarioPublicMode({
+      configuredMode: "review",
+      nodeEnv: "development",
+    }),
+    "review"
+  );
+  assert.equal(
+    resolveAffarioPublicMode({
+      configuredMode: "full",
+      nodeEnv: "production",
+    }),
+    "full"
+  );
+});
+
+function createFullApiData(): AffarioFullProductAnalysisApiData {
+  const payload = createPayload().data;
+
+  return {
+    asin: payload.asin,
+    title: payload.title,
+    brand: "AFFARIO Test",
+    model: "MODEL-TEST",
+    imageUrl: "https://example.test/product.jpg",
+    color: "Verde",
+    size: "128 GB",
+    parentAsin: "B0PARENT01",
+    buyBox: {
+      status: "AVAILABLE",
+      currentPrice: 1_300,
+      price: 1_290,
+      shipping: 10,
+      total: 1_300,
+      currency: "EUR",
+      availabilityMessage: "Disponibile subito",
+      isAmazon: true,
+      isFBA: true,
+      isPrimeEligible: true,
+    },
+    lastBuyBoxUpdate: payload.lastBuyBoxUpdate,
+    priceHistory90Days: {
+      averageBuyBoxPrice: 1_360.12,
+      minimumBuyBoxPrice: 1_099.87,
+      minimumBuyBoxPriceAt: "2026-08-01T10:00:00.000Z",
+      currency: "EUR",
+    },
+    advice: payload.advice as AffarioAdvice,
+    savingsPotential: payload.savingsPotential,
+  };
+}
+
+test("review redige prezzo, disponibilità e storico ma conserva analisi e target", () => {
+  const reviewData = getPublicProductAnalysisData(
+    createFullApiData(),
+    "review"
+  );
+  const serialized = JSON.stringify(reviewData);
+
+  assert.deepEqual(Object.keys(reviewData).sort(), [
+    "advice",
+    "asin",
+    "publicMode",
+    "savingsPotential",
+  ]);
+  assert.equal(reviewData.publicMode, "review");
+  assert.equal(reviewData.advice.score, 84);
+  assert.equal(reviewData.advice.recommendation, "BUY_NOW");
+  assert.equal(reviewData.savingsPotential.status, "AVAILABLE");
+  assert.equal(reviewData.savingsPotential.targetPrice, 1_150);
+  assert.doesNotMatch(
+    serialized,
+    /buyBox|currentPrice|availability|lastBuyBoxUpdate|priceHistory90Days|averageBuyBoxPrice|minimumBuyBoxPrice|Disponibile subito|1300|1360\.12|1099\.87/i
+  );
+});
+
+test("full conserva i dati raw e la CTA Amazon exact ASIN", () => {
+  const source = createFullApiData();
+  const fullData = getPublicProductAnalysisData(source, "full");
+
+  assert.deepEqual(fullData, source);
+
+  if ("publicMode" in fullData) {
+    assert.fail("Il payload API full non deve cambiare contratto.");
+  }
+
+  const clientData: AffarioProductAnalysisData = {
+    publicMode: "full",
+    asin: fullData.asin,
+    buyBox: {
+      status: fullData.buyBox.status,
+      currentPrice: fullData.buyBox.currentPrice,
+    },
+    lastBuyBoxUpdate: fullData.lastBuyBoxUpdate,
+    priceHistory90Days: {
+      averageBuyBoxPrice: fullData.priceHistory90Days.averageBuyBoxPrice,
+      minimumBuyBoxPrice: fullData.priceHistory90Days.minimumBuyBoxPrice,
+    },
+    advice: fullData.advice,
+    savingsPotential: fullData.savingsPotential,
+  };
+  const presentation = getProductAnalysisPresentation(clientData);
+
+  assert.equal(presentation.currentPrice, "1.300,00 €");
+  assert.equal(presentation.minimum90Days, "1.099,87 €");
+  assert.equal(presentation.average90Days, "1.360,12 €");
+  assert.equal(
+    presentation.amazonCta?.url,
+    "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21"
+  );
+  assert.equal(presentation.amazonCta?.label, "Compra ora su Amazon");
+});
+
+test("il client review accetta solo il DTO redatto e usa la CTA prudenziale", async () => {
+  const reviewData = getPublicProductAnalysisData(
+    createFullApiData(),
+    "review"
+  );
+  const requester: ProductAnalysisRequester = async () => ({
+    ok: true,
+    json: async () => ({ data: reviewData }),
+  });
+  const result = await requestProductAnalysisOnce(
+    "B0FQGPJCJK",
+    { inFlight: false },
+    requester
+  );
+
+  assert.ok(result);
+  assert.equal(result.publicMode, "review");
+  assert.equal("buyBox" in result, false);
+
+  const presentation = getProductAnalysisPresentation(result);
+
+  assert.equal(presentation.currentPrice, null);
+  assert.equal(presentation.minimum90Days, null);
+  assert.equal(presentation.average90Days, null);
+  assert.equal(presentation.advice.score, 84);
+  assert.equal(presentation.savingsPotential?.targetPrice, "1.150,00 €");
+  assert.equal(
+    presentation.amazonCta?.url,
+    "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21"
+  );
+  assert.equal(
+    presentation.amazonCta?.label,
+    "Vedi prezzo e disponibilità su Amazon"
+  );
 });

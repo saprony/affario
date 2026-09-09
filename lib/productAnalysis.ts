@@ -26,17 +26,21 @@ export type ProductAnalysisRequestGate = {
 };
 
 export type ProductAnalysisPresentation = {
+  publicMode: "review" | "full";
   advice: AffarioAdvice;
   amazonCta: {
     url: string;
-    label: "Compra ora su Amazon" | "Vedi questa variante su Amazon";
+    label:
+      | "Compra ora su Amazon"
+      | "Vedi questa variante su Amazon"
+      | "Vedi prezzo e disponibilità su Amazon";
     priority: "PRIMARY" | "SUPPORTING" | "NEUTRAL";
   } | null;
   isBuyBoxAvailable: boolean;
   currentPrice: string | null;
   priceTimestamp: string | null;
-  minimum90Days: string;
-  average90Days: string;
+  minimum90Days: string | null;
+  average90Days: string | null;
   savingsPotential: {
     amount: string;
     targetPrice: string;
@@ -182,7 +186,8 @@ function parseSavingsPotential(
 
 function getAmazonCta(
   asin: string,
-  recommendation: AffarioAdviceRecommendation
+  recommendation: AffarioAdviceRecommendation,
+  publicMode: AffarioProductAnalysisData["publicMode"]
 ): ProductAnalysisPresentation["amazonCta"] {
   if (recommendation === "WAIT" || recommendation === "NONE") {
     return null;
@@ -192,6 +197,19 @@ function getAmazonCta(
 
   if (!url) {
     return null;
+  }
+
+  if (publicMode === "review") {
+    return {
+      url,
+      label: "Vedi prezzo e disponibilità su Amazon",
+      priority:
+        recommendation === "BUY_NOW"
+          ? "PRIMARY"
+          : recommendation === "BUY"
+            ? "SUPPORTING"
+            : "NEUTRAL",
+    };
   }
 
   if (recommendation === "BUY_NOW") {
@@ -227,12 +245,41 @@ function parseProductAnalysisPayload(
   }
 
   const { data } = payload;
-  const lastBuyBoxUpdate = data.lastBuyBoxUpdate;
   const advice = parseAffarioAdvice(data.advice);
   const savingsPotential = parseSavingsPotential(data.savingsPotential);
 
   if (
     typeof data.asin !== "string" ||
+    !advice ||
+    !savingsPotential
+  ) {
+    return null;
+  }
+
+  if (data.publicMode === "review") {
+    if (
+      "buyBox" in data ||
+      "lastBuyBoxUpdate" in data ||
+      "priceHistory90Days" in data
+    ) {
+      return null;
+    }
+
+    return {
+      publicMode: data.publicMode,
+      asin: data.asin,
+      advice,
+      savingsPotential,
+    };
+  }
+
+  if ("publicMode" in data) {
+    return null;
+  }
+
+  const lastBuyBoxUpdate = data.lastBuyBoxUpdate;
+
+  if (
     !isRecord(data.buyBox) ||
     (data.buyBox.status !== "AVAILABLE" &&
       data.buyBox.status !== "UNAVAILABLE") ||
@@ -245,8 +292,6 @@ function parseProductAnalysisPayload(
     !isRecord(data.priceHistory90Days) ||
     !isNullableNumber(data.priceHistory90Days.averageBuyBoxPrice) ||
     !isNullableNumber(data.priceHistory90Days.minimumBuyBoxPrice) ||
-    !advice ||
-    !savingsPotential ||
     data.buyBox.currency !== "EUR" ||
     data.priceHistory90Days.currency !== "EUR"
   ) {
@@ -254,6 +299,7 @@ function parseProductAnalysisPayload(
   }
 
   return {
+    publicMode: "full",
     asin: data.asin,
     buyBox: {
       status: data.buyBox.status,
@@ -382,6 +428,7 @@ export function getProductAnalysisPresentation(
   now: Date = new Date()
 ): ProductAnalysisPresentation {
   const isBuyBoxAvailable =
+    data.publicMode === "full" &&
     data.buyBox.status === "AVAILABLE" &&
     data.buyBox.currentPrice !== null;
 
@@ -408,8 +455,13 @@ export function getProductAnalysisPresentation(
       : null;
 
   return {
+    publicMode: data.publicMode,
     advice: data.advice,
-    amazonCta: getAmazonCta(data.asin, data.advice.recommendation),
+    amazonCta: getAmazonCta(
+      data.asin,
+      data.advice.recommendation,
+      data.publicMode
+    ),
     isBuyBoxAvailable,
     currentPrice: isBuyBoxAvailable
       ? formatEuroPrice(data.buyBox.currentPrice)
@@ -418,11 +470,15 @@ export function getProductAnalysisPresentation(
       ? formatLastBuyBoxUpdate(data.lastBuyBoxUpdate, now)
       : null,
     minimum90Days:
-      formatEuroPrice(data.priceHistory90Days.minimumBuyBoxPrice) ??
-      "Non disponibile",
+      data.publicMode === "full"
+        ? formatEuroPrice(data.priceHistory90Days.minimumBuyBoxPrice) ??
+          "Non disponibile"
+        : null,
     average90Days:
-      formatEuroPrice(data.priceHistory90Days.averageBuyBoxPrice) ??
-      "Non disponibile",
+      data.publicMode === "full"
+        ? formatEuroPrice(data.priceHistory90Days.averageBuyBoxPrice) ??
+          "Non disponibile"
+        : null,
     savingsPotential,
   };
 }

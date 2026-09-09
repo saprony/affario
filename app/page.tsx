@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import PublicHome from "@/components/PublicHome";
+import DemoHome from "@/components/DemoHome";
 
 export const metadata: Metadata = {
   title: {
@@ -9,12 +9,6 @@ export const metadata: Metadata = {
     "AFFARIO aiuta a valutare il momento dell'acquisto online attraverso indicazioni semplici e guide indipendenti.",
 };
 
-export default async function Home() {
-  if (process.env.NODE_ENV === "development") {
-    const { default: DemoHome } = await import("@/components/DemoHome");
-
-    return <DemoHome />;
-  }
-
-  return <PublicHome />;
+export default function Home() {
+  return <DemoHome />;
 }

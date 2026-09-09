@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
 import { API_NO_STORE_HEADERS } from "@/lib/jsonRequestBody";
+import { getAffarioPublicMode } from "@/lib/affarioPublicMode";
+import {
+  getPublicProductAnalysisData,
+  type AffarioFullProductAnalysisApiData,
+  type AffarioPublicProductAnalysisApiData,
+} from "@/lib/publicProductAnalysis";
 import {
   ABUSE_RATE_LIMIT_POLICIES,
   executeWithAbuseRateLimits,
@@ -20,8 +26,6 @@ import {
   getKeepaRetryAfterSeconds,
   TEMPORARY_PRODUCT_DATA_MESSAGE,
 } from "@/services/keepaTemporaryUnavailable";
-import type { AffarioAdvice } from "@/types/affarioAdvice";
-import type { AffarioSavingsPotential } from "@/types/productAnalysis";
 
 type ProductRouteContext = {
   params: Promise<{ asin: string }>;
@@ -41,37 +45,7 @@ export type AffarioProductApiErrorResponse = {
 };
 
 export type AffarioProductApiResponse = {
-  data: {
-    asin: string;
-    title: string;
-    brand: string | null;
-    model: string | null;
-    imageUrl: string | null;
-    color: string | null;
-    size: string | null;
-    parentAsin: string | null;
-    buyBox: {
-      status: "AVAILABLE" | "UNAVAILABLE";
-      currentPrice: number | null;
-      price: number | null;
-      shipping: number | null;
-      total: number | null;
-      currency: string;
-      availabilityMessage: string | null;
-      isAmazon: boolean | null;
-      isFBA: boolean | null;
-      isPrimeEligible: boolean | null;
-    };
-    lastBuyBoxUpdate: string | null;
-    priceHistory90Days: {
-      averageBuyBoxPrice: number | null;
-      minimumBuyBoxPrice: number | null;
-      minimumBuyBoxPriceAt: string | null;
-      currency: string;
-    };
-    advice: AffarioAdvice;
-    savingsPotential: AffarioSavingsPotential;
-  };
+  data: AffarioPublicProductAnalysisApiData;
 };
 
 function errorResponse(
@@ -186,42 +160,45 @@ export async function GET(
           result.buyBox.currentIncludingShippingInEuros;
         const advice = buildAffarioProductAdvice(result);
 
+        const fullAnalysis: AffarioFullProductAnalysisApiData = {
+          asin: result.asin,
+          title: result.product.title,
+          brand: result.product.brand,
+          model: result.product.model,
+          imageUrl: result.product.imageUrl,
+          color: result.product.color,
+          size: result.product.size,
+          parentAsin: result.product.parentAsin,
+          buyBox: {
+            status: currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
+            currentPrice,
+            price: result.buyBox.priceInEuros,
+            shipping: result.buyBox.shippingInEuros,
+            total: result.buyBox.totalInEuros,
+            currency: result.currency,
+            availabilityMessage: result.buyBox.availabilityMessage,
+            isAmazon: result.buyBox.isAmazon,
+            isFBA: result.buyBox.isFBA,
+            isPrimeEligible: result.buyBox.isPrimeEligible,
+          },
+          lastBuyBoxUpdate: result.lastBuyBoxUpdate,
+          priceHistory90Days: {
+            averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
+            minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
+            minimumBuyBoxPriceAt: result.buyBox90Days.minimumObservedAt,
+            currency: result.currency,
+          },
+          advice,
+          savingsPotential:
+            result.potentialSavingsAnalysis.savingsPotential,
+        };
+
         return NextResponse.json(
           {
-            data: {
-              asin: result.asin,
-              title: result.product.title,
-              brand: result.product.brand,
-              model: result.product.model,
-              imageUrl: result.product.imageUrl,
-              color: result.product.color,
-              size: result.product.size,
-              parentAsin: result.product.parentAsin,
-              buyBox: {
-                status:
-                  currentPrice === null ? "UNAVAILABLE" : "AVAILABLE",
-                currentPrice,
-                price: result.buyBox.priceInEuros,
-                shipping: result.buyBox.shippingInEuros,
-                total: result.buyBox.totalInEuros,
-                currency: result.currency,
-                availabilityMessage: result.buyBox.availabilityMessage,
-                isAmazon: result.buyBox.isAmazon,
-                isFBA: result.buyBox.isFBA,
-                isPrimeEligible: result.buyBox.isPrimeEligible,
-              },
-              lastBuyBoxUpdate: result.lastBuyBoxUpdate,
-              priceHistory90Days: {
-                averageBuyBoxPrice: result.buyBox90Days.averageInEuros,
-                minimumBuyBoxPrice: result.buyBox90Days.minimumInEuros,
-                minimumBuyBoxPriceAt:
-                  result.buyBox90Days.minimumObservedAt,
-                currency: result.currency,
-              },
-              advice,
-              savingsPotential:
-                result.potentialSavingsAnalysis.savingsPotential,
-            },
+            data: getPublicProductAnalysisData(
+              fullAnalysis,
+              getAffarioPublicMode()
+            ),
           },
           { headers: API_NO_STORE_HEADERS }
         );

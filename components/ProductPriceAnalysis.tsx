@@ -1,3 +1,4 @@
+import Image from "next/image";
 import {
   getProductAnalysisPresentation,
   type ProductAnalysisPresentation,
@@ -96,8 +97,7 @@ export default function ProductPriceAnalysis({
           Analisi del prezzo in corso...
         </p>
         <p className="mt-1 text-sm text-gray-600">
-          Stiamo recuperando il prezzo attuale e lo storico degli ultimi 90
-          giorni.
+          Stiamo elaborando i dati disponibili per questa variante.
         </p>
       </div>
     );
@@ -128,7 +128,10 @@ export default function ProductPriceAnalysis({
       : null;
   const alertOpportunity = getAffarioPriceAlertOpportunity({
     recommendation: state.data.advice.recommendation,
-    currentPrice: state.data.buyBox.currentPrice,
+    currentPrice:
+      state.data.publicMode === "full"
+        ? state.data.buyBox.currentPrice
+        : null,
     savingsPotential: state.data.savingsPotential,
   });
 
@@ -176,53 +179,66 @@ export default function ProductPriceAnalysis({
         {adviceAmazonCta && <AmazonCtaLink cta={adviceAmazonCta} />}
       </div>
 
-      <p className="mt-6 text-sm font-bold text-gray-500">
-        Dati reali del prezzo
-      </p>
-
-      {presentation.isBuyBoxAvailable ? (
-        <div className="mt-2">
-          <h4 className="font-extrabold text-gray-900">
-            Prezzo attuale su Amazon
-          </h4>
-          <p className="mt-1 text-3xl font-black text-green-700">
-            {presentation.currentPrice}
+      {presentation.publicMode === "review" ? (
+        <div className="mt-6 rounded-xl bg-slate-50 p-4">
+          <p className="font-extrabold text-gray-900">
+            Prezzo e disponibilità finali
           </p>
-          <p className="mt-1 text-sm text-gray-500">
-            {presentation.priceTimestamp ??
-              "Orario del prezzo non disponibile."}
+          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+            Verificali direttamente su Amazon.
           </p>
         </div>
       ) : (
-        <div className="mt-2">
-          <h4 className="font-extrabold text-gray-900">
-            Prezzo attuale su Amazon non disponibile
-          </h4>
-          <p className="mt-1 text-sm text-gray-600">
-            Al momento non è disponibile un prezzo attuale per questa
-            variante.
+        <>
+          <p className="mt-6 text-sm font-bold text-gray-500">
+            Dati reali del prezzo
           </p>
-        </div>
-      )}
 
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl bg-slate-50 p-4">
-          <dt className="text-sm font-bold text-gray-500">
-            Minimo ultimi 90 giorni
-          </dt>
-          <dd className="mt-1 text-lg font-extrabold text-gray-900">
-            {presentation.minimum90Days}
-          </dd>
-        </div>
-        <div className="rounded-xl bg-slate-50 p-4">
-          <dt className="text-sm font-bold text-gray-500">
-            Media ultimi 90 giorni
-          </dt>
-          <dd className="mt-1 text-lg font-extrabold text-gray-900">
-            {presentation.average90Days}
-          </dd>
-        </div>
-      </dl>
+          {presentation.isBuyBoxAvailable ? (
+            <div className="mt-2">
+              <h4 className="font-extrabold text-gray-900">
+                Prezzo attuale su Amazon
+              </h4>
+              <p className="mt-1 text-3xl font-black text-green-700">
+                {presentation.currentPrice}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {presentation.priceTimestamp ??
+                  "Orario del prezzo non disponibile."}
+              </p>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <h4 className="font-extrabold text-gray-900">
+                Prezzo attuale su Amazon non disponibile
+              </h4>
+              <p className="mt-1 text-sm text-gray-600">
+                Al momento non è disponibile un prezzo attuale per questa
+                variante.
+              </p>
+            </div>
+          )}
+
+          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <dt className="text-sm font-bold text-gray-500">
+                Minimo ultimi 90 giorni
+              </dt>
+              <dd className="mt-1 text-lg font-extrabold text-gray-900">
+                {presentation.minimum90Days}
+              </dd>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-4">
+              <dt className="text-sm font-bold text-gray-500">
+                Media ultimi 90 giorni
+              </dt>
+              <dd className="mt-1 text-lg font-extrabold text-gray-900">
+                {presentation.average90Days}
+              </dd>
+            </div>
+          </dl>
+        </>
+      )}
 
       {presentation.savingsPotential && (
         <div
@@ -234,9 +250,22 @@ export default function ProductPriceAnalysis({
           <p className="mt-2 text-xl font-black sm:text-2xl">
             Potresti risparmiare circa {presentation.savingsPotential.amount}
           </p>
-          <p className="mt-2 font-bold">
-            Prezzo obiettivo AFFARIO: circa{" "}
-            {presentation.savingsPotential.targetPrice}
+          <p className="mt-3 flex items-center gap-2 font-bold">
+            <Image
+              src="/affario-icon.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 shrink-0 rounded-lg"
+            />
+            <span>
+              Prezzo giusto AFFARIO: circa{" "}
+              {presentation.savingsPotential.targetPrice}
+            </span>
+          </p>
+          <p className="mt-2 text-sm leading-relaxed">
+            È una stima elaborata da AFFARIO, non il prezzo praticato da
+            Amazon.
           </p>
           <p className="mt-2 text-sm leading-relaxed">
             {presentation.savingsPotential.message}
@@ -245,6 +274,7 @@ export default function ProductPriceAnalysis({
       )}
 
       {alertOpportunity &&
+        state.data.publicMode === "full" &&
         state.data.savingsPotential.status === "AVAILABLE" && (
           <AffarioPriceAlert
             exactAsin={state.data.asin}
@@ -252,6 +282,12 @@ export default function ProductPriceAnalysis({
             opportunity={alertOpportunity}
           />
         )}
+
+      {presentation.publicMode === "review" && (
+        <p className="mt-5 text-center text-sm text-gray-500">
+          Gli alert automatici saranno disponibili prossimamente.
+        </p>
+      )}
 
       {neutralAmazonCta && <AmazonCtaLink cta={neutralAmazonCta} />}
     </section>

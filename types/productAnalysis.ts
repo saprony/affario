@@ -14,20 +14,28 @@ export type AffarioSavingsPotential =
       message: null;
     };
 
-export type AffarioProductAnalysisData = {
+type AffarioProductAnalysisBaseData = {
   asin: string;
-  buyBox: {
-    status: "AVAILABLE" | "UNAVAILABLE";
-    currentPrice: number | null;
-  };
-  lastBuyBoxUpdate: string | null;
-  priceHistory90Days: {
-    averageBuyBoxPrice: number | null;
-    minimumBuyBoxPrice: number | null;
-  };
   advice: AffarioAdvice;
   savingsPotential: AffarioSavingsPotential;
 };
+
+export type AffarioProductAnalysisData =
+  | (AffarioProductAnalysisBaseData & {
+      publicMode: "review";
+    })
+  | (AffarioProductAnalysisBaseData & {
+      publicMode: "full";
+      buyBox: {
+        status: "AVAILABLE" | "UNAVAILABLE";
+        currentPrice: number | null;
+      };
+      lastBuyBoxUpdate: string | null;
+      priceHistory90Days: {
+        averageBuyBoxPrice: number | null;
+        minimumBuyBoxPrice: number | null;
+      };
+    });
 
 export type ProductAnalysisState =
   | { status: "idle" }

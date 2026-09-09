@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import {
+  AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+  isAffarioPriceAlertCreationEnabled,
+} from "@/lib/affarioPublicMode";
+import {
   buildPendingPriceAlertInsert,
   normalizePriceAlertEmail,
   PRICE_ALERT_PENDING_STATUS,
@@ -115,6 +119,14 @@ function getManagementOrigin(request: Request): string {
 }
 
 export async function POST(request: Request) {
+  if (!isAffarioPriceAlertCreationEnabled()) {
+    return errorResponse(
+      "ALERT_NOT_AVAILABLE",
+      AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+      503
+    );
+  }
+
   let body: unknown;
 
   try {

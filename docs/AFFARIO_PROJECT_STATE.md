@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 8 settembre 2026.
+Ultimo aggiornamento: 10 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -114,8 +114,11 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 
 ### 6.1 Frontend
 
-- In produzione `app/page.tsx` mostra `PublicHome`.
-- In sviluppo `app/page.tsx` carica `DemoHome`.
+- `app/page.tsx` rende `DemoHome` sia in produzione sia in sviluppo;
+  `PublicHome` resta nel repository ma non è più la homepage pubblica.
+- La produzione senza override usa **REVIEW** di default; lo sviluppo senza
+  override usa **FULL**. `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=review|full` consente
+  l'override esplicito.
 - Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
@@ -238,7 +241,8 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   è applicata; una migration correttiva limita `service_role` ai soli permessi
   `SELECT`, `INSERT` e `UPDATE` previsti.
 - L'invio reale della notifica intermedia resta fuori scope.
-- `PublicHome` resta invariata e le funzionalità reali non sono ancora collegate al flusso UI pubblico completo.
+- `PublicHome` resta invariata nel repository. Il flusso UI reale è pubblico in
+  modalità prudenziale **REVIEW**; AFFARIO non è ancora **FULL LIVE**.
 - L'Affario Score nei dati demo è provvisorio: non sostituire o inventare l'algoritmo definitivo.
 
 ### 6.2 Ricerca e ingresso prodotto reali
@@ -1307,14 +1311,68 @@ Il safety check certifica:
 - Validazione: 297/297 test PASS; lint, typecheck e build PASS;
   `git diff --check` PASS.
 
-## 13. Necessario prima del go-live
+### 12.16 FUNZIONE 049A — PUBLIC REVIEW MODE
 
-La V1 pre-lancio deve restare stretta. Sono necessari:
+- Stato: **CLOSED / PASS**.
+- AFFARIO è **PUBLIC REVIEW LIVE** e non è ancora **FULL LIVE**.
+- In REVIEW restano attivi ricerca reale, selezione variante, analisi completa
+  server-side, Affario Score, recommendation, Prezzo giusto AFFARIO/target
+  derivato, Risparmio Potenziale derivato quando applicabile e CTA Amazon con
+  exact ASIN e tracking ID `affario-21`.
+- La risposta pubblica prodotto REVIEW viene redatta soltanto dopo il calcolo
+  completo server-side. Non espone prezzo Amazon/Buy Box corrente numerico,
+  availability/Buy Box raw, media o minimo 90 giorni numerici, storico raw o
+  timestamp Buy Box.
+- La UI REVIEW usa la copy **“Prezzo e disponibilità finali: Verificali
+  direttamente su Amazon.”** e non mostra il form alert. La creazione pubblica
+  di nuovi alert è fail-closed con `503 ALERT_NOT_AVAILABLE`, prima di lookup,
+  persistenza o invio email; le funzioni alert esistenti non sono state
+  eliminate.
+- Branding ufficiale attivo: logo AFFARIO con slogan nel Hero, payoff **“Scegli
+  il momento giusto per comprare”**, A con mirino accanto al Prezzo giusto
+  AFFARIO e favicon App Router `/icon.png`. La favicon generica Next.js è stata
+  rimossa.
+- La formula ufficiale del footer Amazon resta: **“In qualità di Affiliato
+  Amazon io ricevo un guadagno dagli acquisti idonei.”**
 
-1. chiudere il gate Amazon prima di pubblicare le funzionalità reali Keepa/alert su `affario.it`;
-2. collegare il flusso UI pubblico alle API reali di ricerca e lookup, preservando famiglia → variante → ASIN;
-3. collegare il motore AFFARIO ai dati reali senza inventare l'algoritmo definitivo dello Score;
-4. attivare monitoraggio e scheduler soltanto dopo autorizzazione e completare
+#### Manual QA mobile
+
+- **Homepage PASS**: logo ufficiale corretto, payoff presente, placeholder
+  **“Cerca un prodotto”** e nessuna duplicazione dello slogan.
+- **Sony WH-1000XM5 PASS**: variant selector corretto, analisi completa,
+  **Prezzo nella media**, Affario Score **60/100**, nessun prezzo Amazon,
+  media/minimo 90 giorni, availability/Buy Box o timestamp numerico esposto;
+  copy REVIEW corretta, form alert assente e nota alert prossimamente presente.
+- Il testo derivato AFFARIO **“Il prezzo attuale è in linea con la media
+  recente.”** è accettato in REVIEW.
+- **realme**: **Dati insufficienti** osservato; non è un blocker 049A e il
+  finding 047B-007 resta POST-LIVE.
+- Validazione automatizzata: 303/303 test PASS; lint, typecheck, build e
+  `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
+- Monitoring e Cron restano OFF. Nessuna modifica DB, migration o RLS e nessuna
+  chiamata Brevo fanno parte della Funzione 049A.
+
+#### Gate FULL LIVE e attività differite
+
+- La risposta tecnica definitiva Amazon resta pendente. Il passaggio a **FULL
+  LIVE** e l'esposizione delle funzioni sensibili restano subordinati alla
+  valutazione Amazon.
+- Restano POST-LIVE senza variazioni: 047B-004, 047B-007, 047A-013, cleanup
+  cache, backup/recovery completo e refinement non bloccanti.
+
+## 13. Necessario prima del FULL LIVE
+
+AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
+necessari:
+
+1. chiudere il gate Amazon prima di esporre dati di price tracking raw o
+   riattivare la creazione alert consumer su `affario.it`;
+2. preservare il flusso pubblico REVIEW già collegato alle API reali di ricerca
+   e lookup, mantenendo famiglia → variante → exact ASIN;
+3. preservare il motore AFFARIO sui dati reali senza inventare l'algoritmo
+   definitivo dello Score;
+4. attivare alert consumer, monitoraggio e scheduler soltanto dopo
+   autorizzazione e completare
    l'invio intermedio se confermato nel perimetro V1; l'invio target è già
    implementato;
 5. garantire che ogni controllo sia aggregato per ASIN e rispetti cache/capacità Keepa;
@@ -1367,8 +1425,9 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - Le Funzioni 001–007 non hanno una mappatura canonica certa: non inventarla.
 - La Funzione 013 non ha una mappatura canonica certa: non inventarla.
 - La formula definitiva dell'Affario Score deve ancora essere validata e definita sui dati reali; i valori demo restano provvisori.
-- La risposta tecnica definitiva Amazon resta **OPEN PRE-GO-LIVE** e blocca la
-  pubblicazione delle funzionalità reali Keepa/alert.
+- La risposta tecnica definitiva Amazon resta **OPEN** e blocca il passaggio
+  **FULL LIVE**, l'esposizione dei dati di price tracking raw e la riattivazione
+  degli alert consumer; non blocca la modalità prudenziale PUBLIC REVIEW.
 - Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
   attivato; resta inattivo fino al go-live esplicitamente autorizzato.
 - La FUNZIONE 046B2 di lock distribuito è completata e la migration è applicata
@@ -1400,6 +1459,10 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 049A è CLOSED / PASS**: AFFARIO è **PUBLIC REVIEW LIVE** con
+  `DemoHome` pubblica, dati Amazon raw redatti, alert consumer disattivati e
+  Monitoring/Cron OFF. Il prossimo gate di prodotto è la risposta tecnica
+  definitiva Amazon prima del passaggio **FULL LIVE**.
 - La **FUNZIONE 047B-008 è CLOSED / PASS**: il focus da tastiera delle opzioni
   variante selezionate è chiaramente visibile e la QA manuale non rileva
   regressioni del selector.
@@ -1443,4 +1506,5 @@ Le decisioni seguenti restano nella storia ma sono superate:
   il gate esterno `supabase_admin` resta aperto pre-go-live e non è dichiarato
   risolto. Cron e monitoring restano inattivi.
 
-`PublicHome` e funzioni successive restano invariati.
+`PublicHome` resta nel repository ma non è più la homepage pubblica. Le
+attività POST-LIVE elencate nella Funzione 049A restano invariate.

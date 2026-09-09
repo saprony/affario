@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { FormEvent } from "react";
 
 type HeroProps = {
@@ -22,22 +23,26 @@ export default function Hero({
 
   return (
     <>
-      <header className="mx-auto max-w-6xl px-5 py-6">
-        <div className="text-2xl font-black text-green-600">AFFARIO</div>
+      <header className="mx-auto flex max-w-6xl justify-center px-5 pb-2 pt-7 sm:pt-9">
+        <h1 className="w-full max-w-lg">
+          <Image
+            src="/affario-logo.png"
+            alt="AFFARIO — Gli affari non si trovano... si aspettano!"
+            width={2172}
+            height={724}
+            priority
+            sizes="(max-width: 640px) calc(100vw - 2.5rem), 32rem"
+            className="h-auto w-full"
+          />
+        </h1>
       </header>
 
-      <section className="mx-auto max-w-4xl px-5 py-16 text-center">
+      <section className="mx-auto max-w-4xl px-5 pb-16 pt-8 text-center sm:pt-10">
         <div className="mb-6 inline-block rounded-full bg-green-100 px-4 py-2 text-sm font-bold text-green-800">
           🟢 Price intelligence per acquisti online
         </div>
 
-        <h1 className="text-4xl font-black leading-tight text-gray-900 sm:text-5xl">
-          Gli affari non si trovano...
-          <br />
-          <span className="text-green-600">si aspettano!</span>
-        </h1>
-
-        <p className="mt-6 text-xl text-gray-600 sm:text-2xl">
+        <p className="text-xl text-gray-600 sm:text-2xl">
           Scegli il momento giusto per comprare.
         </p>
 
