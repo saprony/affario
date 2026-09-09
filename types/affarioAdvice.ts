@@ -5,7 +5,7 @@ export type AffarioAdviceLabel =
   | "Buon prezzo"
   | "Prezzo nella media"
   | "Conviene aspettare"
-  | "Dati insufficienti";
+  | "Storico ancora insufficiente";
 
 export type AffarioAdviceTone =
   | "POSITIVE"

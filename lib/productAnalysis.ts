@@ -73,7 +73,7 @@ const AFFARIO_ADVICE_LABELS = new Set<AffarioAdviceLabel>([
   "Buon prezzo",
   "Prezzo nella media",
   "Conviene aspettare",
-  "Dati insufficienti",
+  "Storico ancora insufficiente",
 ]);
 
 const AFFARIO_ADVICE_TONES = new Set<AffarioAdviceTone>([
@@ -189,10 +189,6 @@ function getAmazonCta(
   recommendation: AffarioAdviceRecommendation,
   publicMode: AffarioProductAnalysisData["publicMode"]
 ): ProductAnalysisPresentation["amazonCta"] {
-  if (recommendation === "WAIT" || recommendation === "NONE") {
-    return null;
-  }
-
   const url = buildAmazonAffiliateProductUrl(asin);
 
   if (!url) {

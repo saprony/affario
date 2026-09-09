@@ -64,6 +64,12 @@ function AmazonCtaLink({ cta }: { cta: AmazonCta }) {
     NEUTRAL:
       "border border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50",
   } as const;
+  const reviewCtaStyle =
+    "affario-cta-emphasis bg-green-600 text-white shadow-lg hover:bg-green-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-800 focus-visible:ring-offset-2";
+  const ctaStyle =
+    cta.label === "Vedi prezzo e disponibilità su Amazon"
+      ? reviewCtaStyle
+      : styles[cta.priority];
 
   return (
     <div className="mt-5">
@@ -71,7 +77,7 @@ function AmazonCtaLink({ cta }: { cta: AmazonCta }) {
         href={cta.url}
         target="_blank"
         rel="sponsored noopener noreferrer"
-        className={`block w-full rounded-xl px-5 py-3 text-center font-extrabold transition ${styles[cta.priority]}`}
+        className={`block w-full rounded-xl px-5 py-3 text-center font-extrabold transition ${ctaStyle}`}
       >
         {cta.label}
       </a>

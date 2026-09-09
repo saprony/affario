@@ -26,12 +26,12 @@ export type AffarioAdviceInput = {
 };
 
 export type AffarioAdviceBand = {
-  label: Exclude<AffarioAdviceLabel, "Dati insufficienti">;
+  label: Exclude<AffarioAdviceLabel, "Storico ancora insufficiente">;
   tone: Exclude<AffarioAdviceTone, "MUTED">;
 };
 
 const INSUFFICIENT_DATA_MESSAGE =
-  "AFFARIO non ha ancora abbastanza storico per esprimere un consiglio affidabile.";
+  "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile.";
 
 function isPositiveFiniteNumber(value: number | null): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -159,7 +159,7 @@ function getInsufficientDataAdvice(
   return {
     status: "INSUFFICIENT_DATA",
     score: null,
-    label: "Dati insufficienti",
+    label: "Storico ancora insufficiente",
     message: INSUFFICIENT_DATA_MESSAGE,
     tone: "MUTED",
     recommendation: "NONE",

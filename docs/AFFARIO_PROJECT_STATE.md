@@ -144,8 +144,8 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La lookup esegue al massimo una seconda lettura iniziale DB read-only prima di Keepa; non esiste alcun retry automatico Keepa.
 - La **FUNZIONE 040 è completata e validata**: il primo Consiglio AFFARIO reale è incluso nella stessa risposta prodotto e nella UI di analisi.
 - La formula V1 usa la posizione della Buy Box attuale tra minimo e media Buy Box degli ultimi 90 giorni e produce un Affario Score deterministico da 0 a 100 con le fasce canoniche **Ottimo momento**, **Buon prezzo**, **Prezzo nella media** e **Conviene aspettare**.
-- Con meno di 4 osservazioni valide o meno di 7 giorni di copertura, il consiglio espone **Dati insufficienti** senza Score numerico né verdetto Compra/Aspetta.
-- Le raccomandazioni operative tipizzate sono `BUY_NOW`, `BUY`, `NEUTRAL`, `WAIT` e `NONE`; la CTA Amazon è coerente con la raccomandazione e usa il link affiliato dell'ASIN esatto analizzato.
+- Con meno di 4 osservazioni valide o meno di 7 giorni di copertura, il consiglio espone **Storico ancora insufficiente** senza Score numerico né verdetto Compra/Aspetta.
+- Le raccomandazioni operative tipizzate sono `BUY_NOW`, `BUY`, `NEUTRAL`, `WAIT` e `NONE`; la CTA Amazon resta indipendente dalla raccomandazione e usa il link affiliato dell'ASIN esatto analizzato.
 - Il Consiglio AFFARIO entra con una micro-animazione discreta e finita, disabilitata quando il sistema richiede `prefers-reduced-motion`.
 - La **FUNZIONE 041 è completata** con la gerarchia `LOWEST_12_MONTHS` → `LOWEST_SINCE_AVAILABLE` → `null`.
 - `LOWEST_SINCE_AVAILABLE` è assegnato solo quando l'inizio dello storico utile è certificabile conservativamente tramite `trackingSince`, `listedSince`, coerenza raw/snapshot della stessa acquisizione, completezza della serie Buy Box normalizzata, assenza di troncamento e soglie minime di copertura e osservazioni.
@@ -1335,6 +1335,22 @@ Il safety check certifica:
 - La formula ufficiale del footer Amazon resta: **“In qualità di Affiliato
   Amazon io ricevo un guadagno dagli acquisti idonei.”**
 
+#### Follow-up CTA Amazon — CLOSED / PASS
+
+- La CTA Amazon è indipendente da Score, recommendation e target: con exact
+  ASIN valido resta disponibile anche quando lo storico è insufficiente;
+  senza ASIN valido non viene mostrata.
+- Il nuovo copy consumer è **“Storico ancora insufficiente”**, con il testo
+  **“Questa variante non ha ancora abbastanza dati di prezzo per permettere
+  ad AFFARIO di esprimere un consiglio affidabile.”**
+- La CTA REVIEW **“Vedi prezzo e disponibilità su Amazon”** usa lo stile verde
+  primario. Il contratto affiliato resta
+  `https://www.amazon.it/dp/<EXACT_ASIN>?tag=affario-21`.
+- Manual QA **PASS** su POCO F9 Ultra con storico insufficiente e su un caso
+  **ACQUISTA ORA** con Affario Score **92/100**.
+- La redaction PUBLIC REVIEW resta invariata; alert, Monitoring e Cron restano
+  OFF. I finding post-live già esistenti restano aperti senza variazioni.
+
 #### Manual QA mobile
 
 - **Homepage PASS**: logo ufficiale corretto, payoff presente, placeholder
@@ -1345,9 +1361,9 @@ Il safety check certifica:
   copy REVIEW corretta, form alert assente e nota alert prossimamente presente.
 - Il testo derivato AFFARIO **“Il prezzo attuale è in linea con la media
   recente.”** è accettato in REVIEW.
-- **realme**: **Dati insufficienti** osservato; non è un blocker 049A e il
+- **realme**: **Storico ancora insufficiente** osservato; non è un blocker 049A e il
   finding 047B-007 resta POST-LIVE.
-- Validazione automatizzata: 303/303 test PASS; lint, typecheck, build e
+- Validazione automatizzata: 305/305 test PASS; lint, typecheck, build e
   `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
 - Monitoring e Cron restano OFF. Nessuna modifica DB, migration o RLS e nessuna
   chiamata Brevo fanno parte della Funzione 049A.

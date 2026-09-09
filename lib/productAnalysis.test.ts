@@ -181,7 +181,7 @@ test("espone al client soltanto i dati necessari alla presentazione", async () =
   );
 });
 
-test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
+test("la CTA Amazon resta disponibile per ogni raccomandazione senza mostrare l'ASIN", () => {
   const baseData = {
     publicMode: "full" as const,
     asin: "B0FQGPJCJK",
@@ -257,20 +257,21 @@ test("la CTA Amazon segue la raccomandazione senza mostrare l'ASIN", () => {
         recommendation: "WAIT",
         priceHighlight: null,
       },
-      expectedPriority: null,
+      expectedPriority: "NEUTRAL",
       expectedSavingsProminence: "PROMINENT",
     },
     {
       advice: {
         status: "INSUFFICIENT_DATA",
         score: null,
-        label: "Dati insufficienti",
-        message: "Storico insufficiente.",
+        label: "Storico ancora insufficiente",
+        message:
+          "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile.",
         tone: "MUTED",
         recommendation: "NONE",
         priceHighlight: null,
       },
-      expectedPriority: null,
+      expectedPriority: "NEUTRAL",
       expectedSavingsProminence: null,
     },
   ];
@@ -392,7 +393,7 @@ test("formatta lastBuyBoxUpdate nella timezone Europe/Rome", () => {
   assert.equal(formatLastBuyBoxUpdate(null, now), null);
 });
 
-test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
+test("Buy Box assente non usa price, AMAZON o altri fallback per il prezzo corrente", () => {
   const data = {
     publicMode: "full" as const,
     asin: "B0FQGPJCJK",
@@ -405,9 +406,9 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
     advice: {
       status: "INSUFFICIENT_DATA" as const,
       score: null,
-      label: "Dati insufficienti" as const,
+      label: "Storico ancora insufficiente" as const,
       message:
-        "AFFARIO non ha ancora abbastanza storico per esprimere un consiglio affidabile.",
+        "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile.",
       tone: "MUTED" as const,
       recommendation: "NONE" as const,
       priceHighlight: null,
@@ -426,7 +427,11 @@ test("Buy Box assente non usa price, AMAZON o altri fallback", () => {
   assert.equal(presentation.priceTimestamp, null);
   assert.equal(presentation.advice.status, "INSUFFICIENT_DATA");
   assert.equal(presentation.advice.score, null);
-  assert.equal(presentation.amazonCta, null);
+  assert.deepEqual(presentation.amazonCta, {
+    url: "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21",
+    label: "Vedi questa variante su Amazon",
+    priority: "NEUTRAL",
+  });
   assert.equal(presentation.savingsPotential, null);
   assert.equal(presentation.minimum90Days, "1.099,00 €");
   assert.equal(presentation.average90Days, "1.210,50 €");
@@ -517,6 +522,63 @@ test("review redige prezzo, disponibilità e storico ma conserva analisi e targe
   );
 });
 
+test("review con storico insufficiente mostra la CTA exact ASIN e il nuovo copy", () => {
+  const reviewData = getPublicProductAnalysisData(
+    {
+      ...createFullApiData(),
+      advice: {
+        status: "INSUFFICIENT_DATA",
+        score: null,
+        label: "Storico ancora insufficiente",
+        message:
+          "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile.",
+        tone: "MUTED",
+        recommendation: "NONE",
+        priceHighlight: null,
+      },
+      savingsPotential: {
+        status: "INSUFFICIENT_DATA",
+        amount: null,
+        targetPrice: null,
+        message: null,
+      },
+    },
+    "review"
+  );
+  const presentation = getProductAnalysisPresentation(reviewData);
+
+  assert.equal(presentation.advice.label, "Storico ancora insufficiente");
+  assert.equal(
+    presentation.advice.message,
+    "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile."
+  );
+  assert.deepEqual(presentation.amazonCta, {
+    url: "https://www.amazon.it/dp/B0FQGPJCJK?tag=affario-21",
+    label: "Vedi prezzo e disponibilità su Amazon",
+    priority: "NEUTRAL",
+  });
+  assert.equal(presentation.currentPrice, null);
+  assert.equal(presentation.minimum90Days, null);
+  assert.equal(presentation.average90Days, null);
+  assert.doesNotMatch(
+    JSON.stringify(reviewData),
+    /buyBox|currentPrice|availability|lastBuyBoxUpdate|priceHistory90Days|averageBuyBoxPrice|minimumBuyBoxPrice|Disponibile subito|1300|1360\.12|1099\.87/i
+  );
+});
+
+test("non crea una CTA Amazon quando l'exact ASIN non è risolto", () => {
+  const reviewData = getPublicProductAnalysisData(
+    createFullApiData(),
+    "review"
+  );
+  const presentation = getProductAnalysisPresentation({
+    ...reviewData,
+    asin: "",
+  });
+
+  assert.equal(presentation.amazonCta, null);
+});
+
 test("full conserva i dati raw e la CTA Amazon exact ASIN", () => {
   const source = createFullApiData();
   const fullData = getPublicProductAnalysisData(source, "full");
@@ -554,7 +616,7 @@ test("full conserva i dati raw e la CTA Amazon exact ASIN", () => {
   assert.equal(presentation.amazonCta?.label, "Compra ora su Amazon");
 });
 
-test("il client review accetta solo il DTO redatto e usa la CTA prudenziale", async () => {
+test("il client review con analisi completa usa il DTO redatto e mantiene la CTA", async () => {
   const reviewData = getPublicProductAnalysisData(
     createFullApiData(),
     "review"

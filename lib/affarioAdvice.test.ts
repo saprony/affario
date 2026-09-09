@@ -94,9 +94,9 @@ test("storico insufficiente non espone score o verdetto forte", () => {
     assert.deepEqual(advice, {
       status: "INSUFFICIENT_DATA",
       score: null,
-      label: "Dati insufficienti",
+      label: "Storico ancora insufficiente",
       message:
-        "AFFARIO non ha ancora abbastanza storico per esprimere un consiglio affidabile.",
+        "Questa variante non ha ancora abbastanza dati di prezzo per permettere ad AFFARIO di esprimere un consiglio affidabile.",
       tone: "MUTED",
       recommendation: "NONE",
       priceHighlight: null,
