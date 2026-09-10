@@ -1376,6 +1376,22 @@ Il safety check certifica:
 - Restano POST-LIVE senza variazioni: 047B-004, 047B-007, 047A-013, cleanup
   cache, backup/recovery completo e refinement non bloccanti.
 
+### 12.17 FUNZIONE 049B — VERCEL WEB ANALYTICS
+
+- Stato: **CLOSED / PASS**.
+- È installato `@vercel/analytics` `2.0.1` e il componente `<Analytics />` è
+  integrato una sola volta nel root layout.
+- La V1 usa esclusivamente Vercel Web Analytics standard; non sono presenti
+  custom event.
+- La route sensibile `/alert/[token]` è esclusa completamente dagli Analytics
+  tramite `beforeSend`: gli eventi il cui pathname inizia con `/alert/` vengono
+  annullati restituendo `null`, evitando la raccolta del token.
+- Non vengono inviati query di ricerca, ASIN, email, prezzo o target.
+- Privacy e cookie banner restano invariati.
+- Validazione pre-commit: 305/305 test PASS; lint PASS; typecheck PASS; build
+  PASS; `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
+- Monitoring e Cron restano OFF.
+
 ## 13. Necessario prima del FULL LIVE
 
 AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
