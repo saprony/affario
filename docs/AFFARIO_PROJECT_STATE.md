@@ -461,8 +461,10 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047B.2C1 | **CLOSED / PRODUCTION PASS** — 047B-009/011 chiusi; ricerca ibrida local+provider, strong identity relevance, merge/dedup deterministici e massimo 10 famiglie |
 | 047B.2C2 | **CLOSED / PRODUCTION PASS** — cache persistente distribuita delle query Search, TTL 24 ore, SHA-256 della query normalizzata, lease anti-stampede e runtime MISS→HIT verificato in Production |
 | 050A | **CLOSED / PASS** — SEO tecnico minimo con sitemap, robots, metadata/canonical, social metadata, structured data e noindex delle route sensibili |
+| 050B | **CLOSED / PASS** — audit SEO, AI readiness, chiarezza, linking interno, cannibalizzazione e coerenza PUBLIC REVIEW delle 10 guide pubbliche |
+| 050C | **CLOSED / PASS** — ottimizzazione people-first delle 3 guide P1 con title/meta/H1, aperture, H2 e linking interno contestuale |
 
-Totale associazioni registrate: **48**.
+Totale associazioni registrate: **50**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -1425,6 +1427,33 @@ Il safety check certifica:
   `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
 - Monitoring e Cron restano OFF.
 
+### 12.19 FUNZIONE 050B — SEO + AI GUIDE AUDIT
+
+- Stato: **CLOSED / PASS**.
+- Sono state analizzate tutte le 10 guide pubbliche per SEO classico, AI
+  readiness people-first, chiarezza, linking interno, cannibalizzazione e
+  coerenza con la modalità PUBLIC REVIEW.
+- L'audit ha individuato le 3 guide P1 successivamente ottimizzate nella
+  Funzione 050C, senza inventare dati su volumi, ranking, CTR o traffico.
+- Nessun file è stato modificato durante l'audit. Monitoring e Cron restano
+  OFF.
+
+### 12.20 FUNZIONE 050C — TOP 3 GUIDE SEO + AI
+
+- Stato: **CLOSED / PASS**.
+- Sono state ottimizzate le 3 guide P1 su convenienza del prezzo, decisione
+  comprare/aspettare e confronto tra varianti.
+- Title, meta description e H1 sono stati migliorati dove previsto; le
+  aperture rispondono più direttamente all'intento e gli H2 sono stati
+  riorganizzati per rendere più chiare le risposte principali.
+- Sono stati aggiunti 25 link contestuali complessivi, inclusi i link in
+  ingresso dalle altre 7 guide e i 2 collegamenti naturali alla homepage.
+- Slug e canonical restano invariati. Il manual content QA è **PASS** e non ha
+  rilevato link eccessivi, keyword stuffing o problemi di coerenza con PUBLIC
+  REVIEW.
+- Search, Product API, scoring, CTA Amazon, affiliate tag, alert, database,
+  Keepa e Brevo restano invariati. Monitoring e Cron restano OFF.
+
 ## 13. Necessario prima del FULL LIVE
 
 AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
@@ -1523,6 +1552,12 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 050C è CLOSED / PASS**: le 3 guide P1 hanno title/meta/H1,
+  aperture, H2 e linking interno ottimizzati; il manual content QA è PASS,
+  slug/canonical e PUBLIC REVIEW restano invariati.
+- La **FUNZIONE 050B è CLOSED / PASS**: l'audit SEO e AI readiness people-first
+  delle 10 guide pubbliche è completato e ha definito le priorità editoriali
+  applicate nella Funzione 050C.
 - La **FUNZIONE 050A è CLOSED / PASS**: AFFARIO dispone di sitemap e robots
   pubblici, canonical e metadata social coerenti, structured data minimo e
   protezioni noindex sulle route sensibili; la property Search Console

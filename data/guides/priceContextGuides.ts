@@ -4,33 +4,66 @@ export const priceContextGuides: Guide[] = [
   {
     slug: "come-capire-se-un-prezzo-online-e-davvero-conveniente",
     title: "Come capire se un prezzo online è davvero conveniente",
+    metaTitle: "Come capire se un prezzo online è conveniente",
     description:
-      "Un metodo pratico per valutare un'offerta nel suo contesto, oltre l'etichetta dello sconto.",
+      "Scopri come valutare un prezzo online confrontando prodotto esatto, andamento, condizioni di vendita e utilità reale, senza fermarti allo sconto.",
     publishedAt: "18 agosto 2026",
     introduction: [
-      "Quando vediamo un prezzo evidenziato in rosso, accompagnato da una percentuale o da un conto alla rovescia, è naturale pensare di avere davanti un affare. La convenienza, però, non dipende dal modo in cui un'offerta viene presentata. Dipende dal rapporto tra ciò che stiamo comprando, il prezzo richiesto e le alternative realmente disponibili per le nostre esigenze.",
-      "Capire se un prezzo online è davvero conveniente richiede quindi qualche minuto di attenzione. Non serve diventare esperti di mercato: basta separare i segnali utili da quelli puramente promozionali e costruire un confronto coerente. L'obiettivo non è trovare sempre il minimo assoluto, ma evitare di decidere sulla base di un solo numero isolato.",
+      "Un prezzo online è conveniente quando riguarda il prodotto esatto, è coerente con il suo contesto e offre condizioni adatte al tuo bisogno. Lo sconto dichiarato, da solo, non basta. Per valutarlo controlla variante, andamento del prezzo, venditore e costo complessivo.",
     ],
     sections: [
       {
-        heading: "Partire dal prodotto esatto",
+        heading: "Come capire subito se il prezzo è conveniente",
         paragraphs: [
-          "Il primo controllo riguarda l'identità del prodotto. Due articoli con un nome quasi uguale possono avere memoria, dimensioni, dotazione, anno di uscita o condizioni di vendita differenti. Prima di confrontare i prezzi conviene annotare il modello preciso, la variante e gli accessori inclusi. Un'offerta più economica perde valore se riguarda una configurazione che non risponde al bisogno iniziale.",
-          "Anche il venditore e le condizioni meritano attenzione. Tempi di consegna, garanzia, possibilità di reso e stato del prodotto fanno parte dell'acquisto. Il prezzo può essere corretto soltanto quando il confronto avviene tra proposte davvero equivalenti. Mettere sullo stesso piano un prodotto nuovo e uno ricondizionato, oppure due confezioni diverse, porta facilmente a conclusioni sbagliate.",
+          "Quando vediamo un prezzo evidenziato in rosso, accompagnato da una percentuale o da un conto alla rovescia, è naturale pensare di avere davanti un affare. La convenienza, però, non dipende dal modo in cui un'offerta viene presentata. Dipende dal rapporto tra ciò che stiamo comprando, il prezzo richiesto e le alternative realmente disponibili per le nostre esigenze.",
+          "Capire se un prezzo online è davvero conveniente richiede quindi qualche minuto di attenzione. Non serve diventare esperti di mercato: basta separare i segnali utili da quelli puramente promozionali e costruire un confronto coerente. L'obiettivo non è trovare sempre il minimo assoluto, ma evitare di decidere sulla base di un solo numero isolato.",
         ],
       },
       {
-        heading: "Dare un contesto al numero",
+        heading: "Verificare prodotto e variante esatti",
         paragraphs: [
-          "Il prezzo barrato non è una prova sufficiente. Può rappresentare un listino teorico, un prezzo utilizzato in passato o un semplice riferimento commerciale. È più utile chiedersi se il prezzo attuale sia abituale, raro oppure già visto più volte. Osservare l'andamento nel tempo aiuta a capire se l'offerta è un'occasione concreta o una normale oscillazione presentata con maggiore enfasi.",
+          [
+            "Il primo controllo riguarda l'identità del prodotto. Due articoli con un nome quasi uguale possono avere memoria, dimensioni, dotazione, anno di uscita o condizioni di vendita differenti. Prima di confrontare i prezzi conviene annotare il modello preciso, la variante e gli accessori inclusi. Un'offerta più economica perde valore se riguarda una configurazione che non risponde al bisogno iniziale. Per approfondire, è utile ",
+            {
+              href: "/guide/stesso-prodotto-prezzo-diverso-ruolo-di-variante",
+              text: "confrontare la variante esatta",
+            },
+            ".",
+          ],
+        ],
+      },
+      {
+        heading: "Confrontare prezzo attuale, listino e andamento",
+        paragraphs: [
+          [
+            "Il prezzo barrato non è una prova sufficiente. Può rappresentare un listino teorico, un prezzo utilizzato in passato o un semplice riferimento commerciale. Per interpretarlo è utile conoscere la ",
+            {
+              href: "/guide/prezzo-di-listino-e-prezzo-reale",
+              text: "differenza tra prezzo di listino e prezzo reale",
+            },
+            ". È poi importante chiedersi se il prezzo attuale sia abituale, raro oppure già visto più volte e capire ",
+            {
+              href: "/guide/perche-lo-storico-del-prezzo-puo-cambiare-una-decisione",
+              text: "come leggere lo storico del prezzo",
+            },
+            ". Osservare l'andamento nel tempo aiuta a distinguere un'occasione concreta da una normale oscillazione presentata con maggiore enfasi.",
+          ],
           "Il contesto comprende anche il momento personale. Se il prodotto serve subito, attendere un ribasso incerto può avere un costo in termini di tempo o disagio. Se invece l'acquisto è rinviabile, fissare una soglia e osservare il prezzo con calma riduce gli acquisti impulsivi. Conveniente non significa soltanto economico: significa adeguato al valore atteso e alla propria situazione.",
         ],
       },
       {
-        heading: "Confrontare il valore complessivo",
+        heading: "Valutare condizioni e costo complessivo",
         paragraphs: [
+          "Anche il venditore e le condizioni meritano attenzione. Tempi di consegna, garanzia, possibilità di reso e stato del prodotto fanno parte dell'acquisto. Il prezzo può essere corretto soltanto quando il confronto avviene tra proposte davvero equivalenti. Mettere sullo stesso piano un prodotto nuovo e uno ricondizionato, oppure due confezioni diverse, porta facilmente a conclusioni sbagliate.",
           "Una buona valutazione considera ciò che accade dopo il pagamento. Un modello meno costoso potrebbe richiedere accessori aggiuntivi, offrire meno spazio o diventare inadatto prima del previsto. Al contrario, pagare qualcosa in più per una caratteristica realmente utile può essere sensato. La domanda centrale è se quella differenza migliora davvero l'uso quotidiano, non se la versione superiore appare più completa sulla scheda tecnica.",
-          "Prima del clic finale è utile rileggere l'offerta come se non avesse colori, badge o urgenza. Restano il prodotto, le condizioni, il prezzo e il bisogno. Se questi quattro elementi sono coerenti, la decisione è più solida. Se qualcosa non torna, fermarsi non significa perdere un affare: significa evitare che la presentazione prenda il posto della valutazione.",
+          [
+            "Prima del clic finale è utile rileggere l'offerta come se non avesse colori, badge o urgenza. Restano il prodotto, le condizioni, il prezzo e il bisogno: è il modo più semplice per capire ",
+            {
+              href: "/guide/perche-il-prezzo-piu-basso-non-e-sempre-lofferta-migliore",
+              text: "perché il prezzo più basso non basta",
+            },
+            ". Se questi quattro elementi sono coerenti, la decisione è più solida. Se qualcosa non torna, fermarsi non significa perdere un affare: significa evitare che la presentazione prenda il posto della valutazione.",
+          ],
         ],
       },
     ],
@@ -73,7 +106,14 @@ export const priceContextGuides: Guide[] = [
         heading: "Usare entrambi senza farsi confondere",
         paragraphs: [
           "Il listino non deve essere ignorato: può dare un'indicazione sulla posizione originaria del prodotto e rendere leggibile il percorso commerciale. Va però affiancato ad altre domande. Il prezzo attuale è frequente? La stessa variante è disponibile altrove? Il prodotto è vicino a un ricambio di gamma? Le condizioni di vendita sono davvero comparabili?",
-          "Una decisione equilibrata nasce quando il riferimento promozionale perde il ruolo di verdetto e torna a essere un'informazione tra le altre. In pratica, il listino dice da dove parte il racconto del venditore; il prezzo reale aiuta a capire dove si trova oggi l'acquisto. È questa seconda prospettiva che rende più credibile il giudizio sulla convenienza.",
+          [
+            "Una decisione equilibrata nasce quando il riferimento promozionale perde il ruolo di verdetto e torna a essere un'informazione tra le altre. In pratica, il listino dice da dove parte il racconto del venditore; il prezzo reale aiuta a capire dove si trova oggi l'acquisto. È questa seconda prospettiva che rende più credibile il giudizio sulla convenienza. Per applicare il controllo a tutti gli elementi dell'offerta, puoi vedere ",
+            {
+              href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
+              text: "come capire se un prezzo online è davvero conveniente",
+            },
+            ".",
+          ],
         ],
       },
     ],
@@ -95,7 +135,14 @@ export const priceContextGuides: Guide[] = [
     publishedAt: "18 agosto 2026",
     introduction: [
       "Il prezzo visibile oggi risponde a una domanda semplice: quanto costa adesso? Per decidere bene, però, spesso serve una seconda domanda: come si è comportato nel tempo? Lo storico aggiunge questa dimensione e permette di vedere se il valore attuale è insolito, ricorrente oppure distante dalle condizioni migliori già osservate.",
-      "Consultare l'andamento non significa prevedere con certezza il futuro. Nessuno storico garantisce che un prezzo torni a un livello precedente o che non scenda ancora. Il suo valore è diverso: riduce la dipendenza dal messaggio promozionale del momento e aiuta a costruire aspettative più realistiche prima di acquistare o attendere.",
+      [
+        "Consultare l'andamento non significa prevedere con certezza il futuro. Nessuno storico garantisce che un prezzo torni a un livello precedente o che non scenda ancora. Il suo valore è diverso: riduce la dipendenza dal messaggio promozionale del momento e aiuta a ",
+        {
+          href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
+          text: "valutare se un prezzo online è davvero conveniente",
+        },
+        " prima di acquistare o attendere.",
+      ],
     ],
     sections: [
       {
@@ -116,7 +163,14 @@ export const priceContextGuides: Guide[] = [
         heading: "Collegare lo storico al proprio bisogno",
         paragraphs: [
           "La stessa curva può suggerire decisioni diverse a persone diverse. Chi deve sostituire subito un dispositivo guasto attribuisce valore alla disponibilità immediata. Chi sta pianificando un acquisto non urgente può permettersi di osservare ancora. Lo storico diventa utile soltanto quando viene collegato a una scadenza personale e a una soglia sostenibile.",
-          "Prima di attendere, conviene stabilire quanto tempo si è disposti a concedere alla ricerca e quale miglioramento renderebbe davvero significativa l'attesa. Senza questi limiti, si rischia di rinviare continuamente per inseguire il minimo assoluto. Una buona informazione dovrebbe semplificare la decisione, non trasformarla in un controllo infinito.",
+          [
+            "Prima di attendere, conviene stabilire quanto tempo si è disposti a concedere alla ricerca e quale miglioramento renderebbe davvero significativa l'attesa. Senza questi limiti, si rischia di rinviare continuamente per inseguire il minimo assoluto. Una buona informazione dovrebbe semplificare la decisione e aiutare a ",
+            {
+              href: "/guide/comprare-subito-o-aspettare",
+              text: "decidere se comprare subito o aspettare",
+            },
+            ", non trasformarsi in un controllo infinito.",
+          ],
         ],
       },
     ],
@@ -139,7 +193,19 @@ export const priceContextGuides: Guide[] = [
     publishedAt: "18 agosto 2026",
     introduction: [
       "Le percentuali di sconto sono immediate: condensano un confronto in un numero facile da riconoscere e permettono di ordinare rapidamente molte offerte. Proprio questa semplicità può diventare un limite. Una percentuale descrive la distanza tra due valori, ma non spiega da sola se il valore di partenza sia rappresentativo né se il prodotto sia adatto a chi sta acquistando.",
-      "Interpretare bene uno sconto non significa ignorarlo. Significa rimetterlo al suo posto: è un segnale iniziale che merita una verifica, non una conclusione. Per capire quanto vale davvero occorre guardare il prezzo finale, il riferimento usato, la variante proposta e le condizioni complessive dell'acquisto.",
+      [
+        "Interpretare bene uno sconto non significa ignorarlo. Significa rimetterlo al suo posto: è un segnale iniziale che merita una verifica, non una conclusione. Per ",
+        {
+          href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
+          text: "capire se un prezzo online è davvero conveniente",
+        },
+        " occorre guardare il prezzo finale, il riferimento usato, la variante proposta e le condizioni complessive dell'acquisto. Se le configurazioni sembrano simili, conviene anche verificare ",
+        {
+          href: "/guide/stesso-prodotto-prezzo-diverso-ruolo-di-variante",
+          text: "come confrontare le varianti dello stesso prodotto",
+        },
+        ".",
+      ],
     ],
     sections: [
       {
@@ -188,7 +254,14 @@ export const priceContextGuides: Guide[] = [
       {
         heading: "Verificare che il prodotto sia davvero lo stesso",
         paragraphs: [
-          "Titoli simili possono nascondere differenze nella capacità, nel colore, nelle dimensioni, nell'anno del modello o nella dotazione. Anche una sigla finale può distinguere versioni destinate a mercati diversi. Il primo prezzo della lista è utile soltanto se corrisponde esattamente alla configurazione cercata. Altrimenti il confronto parte da una somiglianza, non da un'equivalenza.",
+          [
+            "Titoli simili possono nascondere differenze nella capacità, nel colore, nelle dimensioni, nell'anno del modello o nella dotazione. Anche una sigla finale può distinguere versioni destinate a mercati diversi. Il primo prezzo della lista è utile soltanto se corrisponde esattamente alla configurazione cercata. Altrimenti il confronto parte da una somiglianza, non da un'equivalenza: ecco perché è importante sapere ",
+            {
+              href: "/guide/stesso-prodotto-prezzo-diverso-ruolo-di-variante",
+              text: "come confrontare la stessa variante",
+            },
+            ".",
+          ],
           "Occorre controllare anche lo stato: nuovo, usato, ricondizionato o confezione danneggiata descrivono proposte differenti. Ciascuna può avere senso, purché la scelta sia consapevole. Il problema nasce quando un prezzo inferiore viene percepito come confronto diretto con un prodotto nuovo, mentre le condizioni raccontano un'altra categoria di acquisto.",
         ],
       },
@@ -203,7 +276,14 @@ export const priceContextGuides: Guide[] = [
         heading: "Guardare il costo nel tempo",
         paragraphs: [
           "Alcuni prodotti richiedono consumabili, accessori, abbonamenti o manutenzione. Un prezzo iniziale basso può essere compensato da costi successivi più elevati. Prima di decidere conviene chiedersi che cosa sarà necessario per utilizzare davvero l'articolo e per quanto tempo pensiamo di tenerlo. Il costo di ingresso è solo una parte del valore complessivo.",
-          "Conta infine l'adeguatezza. Comprare una versione troppo limitata perché costa meno può portare a sostituirla prima; scegliere funzioni inutili perché sembrano convenienti produce l'effetto opposto. L'offerta migliore è quella che equilibra prezzo, durata attesa, condizioni e bisogni concreti. A volte sarà la più economica, altre volte no.",
+          [
+            "Conta infine l'adeguatezza. Comprare una versione troppo limitata perché costa meno può portare a sostituirla prima; scegliere funzioni inutili perché sembrano convenienti produce l'effetto opposto. L'offerta migliore è quella che equilibra prezzo, durata attesa, condizioni e bisogni concreti. Questo insieme di fattori serve a ",
+            {
+              href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
+              text: "valutare la convenienza reale del prezzo",
+            },
+            ": a volte l'offerta migliore sarà la più economica, altre volte no.",
+          ],
         ],
       },
     ],

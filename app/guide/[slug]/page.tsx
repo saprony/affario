@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getGuideBySlug, guides } from "@/data/guides";
 import { createPublicPageMetadata } from "@/lib/seoMetadata";
+import type { GuideParagraph } from "@/types/guide";
 
 type GuidePageProps = {
   params: Promise<{ slug: string }>;
@@ -29,10 +30,40 @@ export async function generateMetadata({
   }
 
   return createPublicPageMetadata({
-    title: guide.title,
+    title: guide.metaTitle ?? guide.title,
     description: guide.description,
     path: `/guide/${guide.slug}`,
   });
+}
+
+function getParagraphText(paragraph: GuideParagraph): string {
+  if (typeof paragraph === "string") {
+    return paragraph;
+  }
+
+  return paragraph
+    .map((segment) => (typeof segment === "string" ? segment : segment.text))
+    .join("");
+}
+
+function renderParagraph(paragraph: GuideParagraph) {
+  if (typeof paragraph === "string") {
+    return paragraph;
+  }
+
+  return paragraph.map((segment, index) =>
+    typeof segment === "string" ? (
+      segment
+    ) : (
+      <Link
+        key={`${segment.href}-${index}`}
+        href={segment.href}
+        className="font-semibold text-emerald-800 underline decoration-emerald-200 decoration-2 underline-offset-4 hover:text-emerald-950"
+      >
+        {segment.text}
+      </Link>
+    )
+  );
 }
 
 export default async function GuidePage({ params }: GuidePageProps) {
@@ -58,7 +89,7 @@ export default async function GuidePage({ params }: GuidePageProps) {
             Guida Affario
           </p>
           <h1 className="mt-4 text-4xl font-black leading-tight tracking-[-0.035em] sm:text-5xl">
-            {guide.title}
+            {guide.heading ?? guide.title}
           </h1>
           <p className="mt-5 text-lg leading-8 text-slate-600">
             {guide.description}
@@ -70,7 +101,7 @@ export default async function GuidePage({ params }: GuidePageProps) {
 
         <div className="mt-9 space-y-5 text-[1.0625rem] leading-8 text-slate-700">
           {guide.introduction.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
+            <p key={getParagraphText(paragraph)}>{renderParagraph(paragraph)}</p>
           ))}
         </div>
 
@@ -81,7 +112,9 @@ export default async function GuidePage({ params }: GuidePageProps) {
             </h2>
             <div className="mt-5 space-y-5 text-[1.0625rem] leading-8 text-slate-700">
               {section.paragraphs.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
+                <p key={getParagraphText(paragraph)}>
+                  {renderParagraph(paragraph)}
+                </p>
               ))}
             </div>
           </section>
