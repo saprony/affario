@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 10 settembre 2026.
+Ultimo aggiornamento: 15 settembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -460,8 +460,9 @@ Le associazioni seguenti derivano dalle specifiche approvate e dalla cronologia 
 | 047B.2B | **CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS** — 047B-005/006 chiusi; titoli famiglia compatti nelle search card, mapping consumer Memoria/RAM e deduplicazione conservativa degli attributi |
 | 047B.2C1 | **CLOSED / PRODUCTION PASS** — 047B-009/011 chiusi; ricerca ibrida local+provider, strong identity relevance, merge/dedup deterministici e massimo 10 famiglie |
 | 047B.2C2 | **CLOSED / PRODUCTION PASS** — cache persistente distribuita delle query Search, TTL 24 ore, SHA-256 della query normalizzata, lease anti-stampede e runtime MISS→HIT verificato in Production |
+| 050A | **CLOSED / PASS** — SEO tecnico minimo con sitemap, robots, metadata/canonical, social metadata, structured data e noindex delle route sensibili |
 
-Totale associazioni registrate: **47**.
+Totale associazioni registrate: **48**.
 
 Le Funzioni 001–007 e 013 non sono associate qui a capability specifiche perché manca una mappatura canonica esplicita. La storia Git resta disponibile, ma non sostituisce una decisione di numerazione.
 
@@ -1392,6 +1393,38 @@ Il safety check certifica:
   PASS; `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
 - Monitoring e Cron restano OFF.
 
+### 12.18 FUNZIONE 050A — SEO TECNICO + GOOGLE INDEXING READY
+
+- Stato: **CLOSED / PASS**.
+- La property Google Search Console `affario.it` è **VERIFIED**.
+- La sitemap App Router `/sitemap.xml` contiene esclusivamente 13 URL pubblici
+  indicizzabili sul dominio canonico `https://www.affario.it`: homepage,
+  Privacy, indice Guide e 10 guide pubblicate. Non contiene API, route alert o
+  URL con query dinamiche.
+- `robots.txt` consente il crawling delle pagine pubbliche, esclude `/api/` e
+  `/alert/` e dichiara la sitemap canonica
+  `https://www.affario.it/sitemap.xml`.
+- `metadataBase` è `https://www.affario.it`; homepage, Privacy, indice Guide e
+  singole guide espongono canonical coerenti sul dominio `www`.
+- Le pagine pubbliche espongono metadata Open Graph e Twitter essenziali usando
+  il logo AFFARIO già presente nel repository.
+- La homepage include JSON-LD minimo e pubblico `WebSite` + `Organization`,
+  senza rating, recensioni, prezzi o `SearchAction`.
+- `/alert/[token]` resta fuori dalla sitemap, è esclusa da robots e usa
+  `noindex,nofollow` sia nei metadata sia tramite `X-Robots-Tag`, senza esporre
+  o registrare il token nei metadata.
+- Tutte le route `/api/*` sono escluse da robots e ricevono
+  `X-Robots-Tag: noindex, nofollow` senza modifiche alla loro logica.
+- Manual QA locale sitemap: **PASS** — HTTP 200, 13 URL attesi e nessun URL
+  escluso.
+- Manual QA locale robots: **PASS** — regole e sitemap canonica corrette.
+- La modalità **PUBLIC REVIEW** resta invariata: nessuna modifica a Search,
+  Product API, scoring, CTA Amazon, affiliate tag, review mode, alert logic,
+  database, Keepa o Brevo.
+- Validazione: 311/311 test PASS; lint PASS; typecheck PASS; build PASS;
+  `git diff --check` PASS; `npm audit` PASS con zero vulnerabilità.
+- Monitoring e Cron restano OFF.
+
 ## 13. Necessario prima del FULL LIVE
 
 AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
@@ -1439,7 +1472,6 @@ Questi elementi restano nel backlog e non diventano automaticamente requisiti pr
 - pagina risultati più ricca;
 - area “I miei alert”;
 - analytics personali;
-- SEO;
 - recensioni verificate post-V1;
 - B2B e predittivo soltanto in futuro.
 
@@ -1491,6 +1523,10 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- La **FUNZIONE 050A è CLOSED / PASS**: AFFARIO dispone di sitemap e robots
+  pubblici, canonical e metadata social coerenti, structured data minimo e
+  protezioni noindex sulle route sensibili; la property Search Console
+  `affario.it` è verificata e il sito è pronto per l'indicizzazione Google.
 - La **FUNZIONE 049A è CLOSED / PASS**: AFFARIO è **PUBLIC REVIEW LIVE** con
   `DemoHome` pubblica, dati Amazon raw redatti, alert consumer disattivati e
   Monitoring/Cron OFF. Il prossimo gate di prodotto è la risposta tecnica

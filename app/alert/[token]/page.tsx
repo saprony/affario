@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import ConfirmAlertButton from "@/components/ConfirmAlertButton";
@@ -17,13 +16,11 @@ import { formatUserFacingProductTitle } from "@/lib/userFacingProductTitle";
 import {
   getPriceAlertManagementPageAccessWithDevelopmentPreviews,
 } from "@/services/priceAlertManagementPageAccess";
+import { alertManagementMetadata } from "@/lib/seoMetadata";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Gestisci alert | AFFARIO",
-  referrer: "no-referrer",
-};
+export const metadata = alertManagementMetadata;
 
 type AlertManagementPageProps = {
   params: Promise<{ token: string }>;

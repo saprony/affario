@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getGuideBySlug, guides } from "@/data/guides";
+import { createPublicPageMetadata } from "@/lib/seoMetadata";
 
 type GuidePageProps = {
   params: Promise<{ slug: string }>;
@@ -18,13 +19,20 @@ export async function generateMetadata({
   const guide = getGuideBySlug(slug);
 
   if (!guide) {
-    return { title: "Guida non trovata" };
+    return {
+      title: "Guida non trovata",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
   }
 
-  return {
+  return createPublicPageMetadata({
     title: guide.title,
     description: guide.description,
-  };
+    path: `/guide/${guide.slug}`,
+  });
 }
 
 export default async function GuidePage({ params }: GuidePageProps) {

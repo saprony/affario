@@ -1,12 +1,8 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { guides } from "@/data/guides";
+import { guidesMetadata } from "@/lib/seoMetadata";
 
-export const metadata: Metadata = {
-  title: "Guide Affario",
-  description:
-    "Guide pratiche per interpretare prezzi, sconti e varianti e scegliere con maggiore consapevolezza quando acquistare online.",
-};
+export const metadata = guidesMetadata;
 
 export default function GuidesPage() {
   return (

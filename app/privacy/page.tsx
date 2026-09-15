@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
+import { privacyMetadata } from "@/lib/seoMetadata";
 
-export const metadata: Metadata = {
-  title: "Informativa Privacy",
-  description:
-    "Informativa sul trattamento dei dati personali del servizio AFFARIO.",
-};
+export const metadata = privacyMetadata;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

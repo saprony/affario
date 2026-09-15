@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import PublicHeader from "@/components/PublicHeader";
+import { rootMetadata } from "@/lib/seoMetadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,14 +16,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "AFFARIO — Scegli il momento giusto per comprare",
-    template: "%s | AFFARIO",
-  },
-  description:
-    "AFFARIO aiuta a valutare il momento giusto per acquistare online.",
-};
+export const metadata = rootMetadata;
 
 export default function RootLayout({
   children,

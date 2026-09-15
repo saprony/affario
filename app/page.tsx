@@ -1,14 +1,18 @@
-import type { Metadata } from "next";
 import DemoHome from "@/components/DemoHome";
+import { affarioStructuredData, homeMetadata } from "@/lib/seoMetadata";
 
-export const metadata: Metadata = {
-  title: {
-    absolute: "AFFARIO — Scegli il momento giusto per comprare",
-  },
-  description:
-    "AFFARIO aiuta a valutare il momento dell'acquisto online attraverso indicazioni semplici e guide indipendenti.",
-};
+export const metadata = homeMetadata;
 
 export default function Home() {
-  return <DemoHome />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(affarioStructuredData).replace(/</g, "\\u003c"),
+        }}
+      />
+      <DemoHome />
+    </>
+  );
 }

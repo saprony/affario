@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import {
   dirname,
@@ -22,7 +22,9 @@ function resolveProjectFile(candidatePath) {
         ),
       ];
 
-  const matchedPath = candidates.find((path) => existsSync(path));
+  const matchedPath = candidates.find(
+    (path) => existsSync(path) && statSync(path).isFile()
+  );
   return matchedPath ? pathToFileURL(matchedPath).href : null;
 }
 
