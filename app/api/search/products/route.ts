@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import {
   AffarioProductSearchInputError,
@@ -12,6 +12,7 @@ import {
   ABUSE_RATE_LIMIT_POLICIES,
   executeWithAbuseRateLimits,
 } from "@/services/abuseRateLimit";
+import { scheduleAffarioPilotMetric } from "@/services/affarioPilotMetrics";
 import {
   AffarioProductSearchServiceError,
 } from "@/services/affarioProductSearch";
@@ -145,6 +146,8 @@ export async function GET(request: Request) {
   if (execution.status !== "completed") {
     return createAbuseRateLimitFailureResponse(execution);
   }
+
+  scheduleAffarioPilotMetric("search", execution.value.ok, after);
 
   return execution.value;
 }

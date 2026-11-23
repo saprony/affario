@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { normalizePriceAlertEmail } from "../lib/affarioPriceAlert";
@@ -20,8 +22,25 @@ import {
   type AbuseRateLimitStore,
   type AbuseRateLimitStoreInput,
 } from "./abuseRateLimit";
+import {
+  createAffarioPilotMetricRecorder,
+  scheduleAffarioPilotMetric,
+  type AffarioPilotMetric,
+} from "./affarioPilotMetrics";
 
 const HMAC_SECRET = "s".repeat(ABUSE_RATE_LIMIT_HMAC_MIN_BYTES);
+const PILOT_METRICS_SERVICE_PATH = resolve(
+  process.cwd(),
+  "services/affarioPilotMetrics.ts"
+);
+const SEARCH_ROUTE_PATH = resolve(
+  process.cwd(),
+  "app/api/search/products/route.ts"
+);
+const ANALYSIS_ROUTE_PATH = resolve(
+  process.cwd(),
+  "app/api/products/[asin]/route.ts"
+);
 
 type FixedWindowRow = {
   windowStartedAt: number;
@@ -774,5 +793,233 @@ test("429 e 503 sono sanitizzati e non memorizzabili", async () => {
   assert.doesNotMatch(
     unavailableBody,
     /supabase|keepa|brevo|rpc|digest|email|secret|env|internal/i
+  );
+});
+
+function createPilotMetricTestRecorder({
+  nodeEnvironment,
+  vercelEnvironment,
+  recordedMetrics,
+  warnings,
+  shouldFail = false,
+}: {
+  nodeEnvironment: string | undefined;
+  vercelEnvironment: string | undefined;
+  recordedMetrics: AffarioPilotMetric[];
+  warnings: string[];
+  shouldFail?: boolean;
+}) {
+  return createAffarioPilotMetricRecorder({
+    getNodeEnvironment: () => nodeEnvironment,
+    getVercelEnvironment: () => vercelEnvironment,
+    incrementMetric: async (metric) => {
+      if (shouldFail) {
+        throw new Error("metric store unavailable");
+      }
+
+      recordedMetrics.push(metric);
+    },
+    warn: () => {
+      warnings.push("fixed-warning");
+    },
+  });
+}
+
+function createImmediatePilotMetricScheduler(tasks: Promise<void>[]) {
+  return (callback: () => void | Promise<void>) => {
+    tasks.push(Promise.resolve(callback()));
+  };
+}
+
+test("metriche pilot escluse in locale test e preview Vercel", async () => {
+  const recordedMetrics: AffarioPilotMetric[] = [];
+  const warnings: string[] = [];
+
+  for (const [nodeEnvironment, vercelEnvironment] of [
+    ["development", undefined],
+    ["test", undefined],
+    ["production", "preview"],
+    ["production", "development"],
+  ] as const) {
+    const recordMetric = createPilotMetricTestRecorder({
+      nodeEnvironment,
+      vercelEnvironment,
+      recordedMetrics,
+      warnings,
+    });
+
+    await recordMetric("search");
+  }
+
+  assert.deepEqual(recordedMetrics, []);
+  assert.deepEqual(warnings, []);
+});
+
+test("metriche pilot abilitate solo in produzione Vercel", async () => {
+  const recordedMetrics: AffarioPilotMetric[] = [];
+  const warnings: string[] = [];
+  const recordMetric = createPilotMetricTestRecorder({
+    nodeEnvironment: "production",
+    vercelEnvironment: "production",
+    recordedMetrics,
+    warnings,
+  });
+
+  await recordMetric("search");
+  await recordMetric("analysis");
+
+  assert.deepEqual(recordedMetrics, ["search", "analysis"]);
+  assert.deepEqual(warnings, []);
+});
+
+test("search riuscita incrementa una volta mentre search fallita non conta", async () => {
+  const recordedMetrics: AffarioPilotMetric[] = [];
+  const tasks: Promise<void>[] = [];
+  const schedule = createImmediatePilotMetricScheduler(tasks);
+  const recordMetric = async (metric: AffarioPilotMetric) => {
+    recordedMetrics.push(metric);
+  };
+
+  scheduleAffarioPilotMetric("search", true, schedule, recordMetric);
+  scheduleAffarioPilotMetric("search", false, schedule, recordMetric);
+  await Promise.all(tasks);
+
+  assert.deepEqual(recordedMetrics, ["search"]);
+});
+
+test("analysis riuscita incrementa una volta mentre analysis fallita non conta", async () => {
+  const recordedMetrics: AffarioPilotMetric[] = [];
+  const tasks: Promise<void>[] = [];
+  const schedule = createImmediatePilotMetricScheduler(tasks);
+  const recordMetric = async (metric: AffarioPilotMetric) => {
+    recordedMetrics.push(metric);
+  };
+
+  scheduleAffarioPilotMetric("analysis", true, schedule, recordMetric);
+  scheduleAffarioPilotMetric("analysis", false, schedule, recordMetric);
+  await Promise.all(tasks);
+
+  assert.deepEqual(recordedMetrics, ["analysis"]);
+});
+
+test("errore contatore resta best-effort e non rompe il flusso API", async () => {
+  const recordedMetrics: AffarioPilotMetric[] = [];
+  const warnings: string[] = [];
+  const tasks: Promise<void>[] = [];
+  const applicationResponse = { ok: true, status: 200 } as const;
+  const recordMetric = createPilotMetricTestRecorder({
+    nodeEnvironment: "production",
+    vercelEnvironment: "production",
+    recordedMetrics,
+    warnings,
+    shouldFail: true,
+  });
+
+  let returnedResponse: typeof applicationResponse | undefined;
+  assert.doesNotThrow(() => {
+    scheduleAffarioPilotMetric(
+      "search",
+      true,
+      createImmediatePilotMetricScheduler(tasks),
+      recordMetric
+    );
+    returnedResponse = applicationResponse;
+  });
+  await assert.doesNotReject(Promise.all(tasks));
+
+  assert.strictEqual(returnedResponse, applicationResponse);
+  assert.deepEqual(recordedMetrics, []);
+  assert.deepEqual(warnings, ["fixed-warning"]);
+});
+
+test("errore sincrono dello scheduler non si propaga alla risposta", () => {
+  const applicationResponse = { ok: true, status: 200 } as const;
+  const warnings: unknown[][] = [];
+  let recorderCalls = 0;
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+
+  try {
+    const executeRouteTail = () => {
+      scheduleAffarioPilotMetric(
+        "analysis",
+        true,
+        () => {
+          throw new Error("scheduler unavailable");
+        },
+        async () => {
+          recorderCalls += 1;
+        }
+      );
+
+      return applicationResponse;
+    };
+
+    let returnedResponse: typeof applicationResponse | undefined;
+    assert.doesNotThrow(() => {
+      returnedResponse = executeRouteTail();
+    });
+    assert.strictEqual(returnedResponse, applicationResponse);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(recorderCalls, 0);
+  assert.deepEqual(warnings, [
+    ["Contatore metriche pilot AFFARIO non disponibile."],
+  ]);
+});
+
+test("i route schedulano solo il nome metrica dopo una risposta riuscita", () => {
+  const searchRoute = readFileSync(SEARCH_ROUTE_PATH, "utf8");
+  const analysisRoute = readFileSync(ANALYSIS_ROUTE_PATH, "utf8");
+
+  const searchCall = searchRoute.match(
+    /scheduleAffarioPilotMetric\([\s\S]*?\);/u
+  )?.[0];
+  const analysisCall = analysisRoute.match(
+    /scheduleAffarioPilotMetric\([\s\S]*?\);/u
+  )?.[0];
+
+  assert.equal(
+    searchCall,
+    'scheduleAffarioPilotMetric("search", execution.value.ok, after);'
+  );
+  assert.equal(
+    analysisCall,
+    'scheduleAffarioPilotMetric("analysis", execution.value.ok, after);'
+  );
+  assert.doesNotMatch(searchCall, /query|asin|email|request|header/i);
+  assert.doesNotMatch(analysisCall, /query|asin|email|request|header/i);
+
+  for (const source of [searchRoute, analysisRoute]) {
+    assert.ok(
+      source.indexOf('if (execution.status !== "completed")') <
+        source.indexOf("scheduleAffarioPilotMetric(")
+    );
+    assert.ok(
+      source.indexOf("scheduleAffarioPilotMetric(") <
+        source.lastIndexOf("return execution.value;")
+    );
+  }
+});
+
+test("il service invia alla RPC soltanto search o analysis", () => {
+  const service = readFileSync(PILOT_METRICS_SERVICE_PATH, "utf8");
+
+  assert.match(service, /^import "server-only";/u);
+  assert.match(
+    service,
+    /process\.env\.NODE_ENV[\s\S]*process\.env\.VERCEL_ENV/u
+  );
+  assert.match(
+    service,
+    /\.rpc\(\s*"increment_affario_pilot_metric",\s*\{ p_metric_name: metric \}\s*\)/u
+  );
+  assert.doesNotMatch(
+    service,
+    /\b(query|asin|email|ip|userAgent|user_agent|userId|user_id|session)\b/u
   );
 });

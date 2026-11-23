@@ -1552,6 +1552,21 @@ Il safety check certifica:
 - Non attivare `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` per il pilot iniziale.
   FULL resta disponibile localmente per i test.
 
+#### PILOT METRICS
+
+- AFFARIO conta soltanto le `search` e le `analysis` riuscite, in forma
+  giornaliera aggregata.
+- I contatori applicativi sono abilitati esclusivamente su **Vercel
+  Production**; locale, test e Preview non incrementano le metriche.
+- Non vengono raccolti dati personali, query di ricerca o ASIN. La tabella
+  conserva soltanto giorno, nome della metrica, conteggio aggregato e data di
+  aggiornamento.
+- **Vercel Web Analytics** misura visite e pageview.
+- **Google Search Console** misura la visibilità su Google.
+- **Amazon Associates Central** misura click, ordini e commissioni attribuiti.
+- La migration dei contatori è predisposta nel working tree locale ma non è
+  applicata al Supabase remoto.
+
 #### Alert e compliance
 
 - **ALERT PUBBLICO: OFF** e monitoraggio automatico **OFF**.
@@ -1568,7 +1583,7 @@ Il safety check certifica:
 
 #### Verifiche finali del blocco locale
 
-- `npm test`: **326/326 PASS**;
+- `npm test`: **337/337 PASS**;
 - `npm run lint`: **PASS**;
 - `npm run typecheck`: **PASS**;
 - `npm run build`: **PASS**;

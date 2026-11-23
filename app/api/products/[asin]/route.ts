@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { createAbuseRateLimitFailureResponse } from "@/lib/abuseRateLimitResponse";
 import { SERVICE_TEMPORARILY_UNAVAILABLE_MESSAGE } from "@/lib/consumerServiceMessages";
@@ -13,6 +13,7 @@ import {
   ABUSE_RATE_LIMIT_POLICIES,
   executeWithAbuseRateLimits,
 } from "@/services/abuseRateLimit";
+import { scheduleAffarioPilotMetric } from "@/services/affarioPilotMetrics";
 import {
   AffarioProductLookupError,
   getAffarioProductByAsin,
@@ -211,6 +212,8 @@ export async function GET(
   if (execution.status !== "completed") {
     return createAbuseRateLimitFailureResponse(execution);
   }
+
+  scheduleAffarioPilotMetric("analysis", execution.value.ok, after);
 
   return execution.value;
 }
