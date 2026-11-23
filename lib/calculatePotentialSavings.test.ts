@@ -42,6 +42,29 @@ function constantPriceHistory(price: number): TimeWeightedBuyBoxPoint[] {
   ];
 }
 
+test("un solo evento Buy Box stabile per 70 giorni è sufficiente per il Q25", () => {
+  const result = analyze(1_739, [
+    { price: 1_739, observedAt: atDay(20) },
+  ]);
+
+  assert.equal(result.calendarCoverageDays, 90);
+  assert.equal(result.validPriceDurationDays, 70);
+  assert.equal(result.weightedPercentile25, 1_739);
+  assert.equal(result.savingsPotential.status, "NOT_APPLICABLE");
+});
+
+test("un solo evento recente richiede almeno 7 giorni di durata valida", () => {
+  const recent = analyze(120, [{ price: 100, observedAt: atDay(84) }]);
+  const atThreshold = analyze(120, [
+    { price: 100, observedAt: atDay(83) },
+  ]);
+
+  assert.equal(recent.validPriceDurationDays, 6);
+  assert.equal(recent.savingsPotential.status, "INSUFFICIENT_DATA");
+  assert.equal(atThreshold.validPriceDurationDays, 7);
+  assert.equal(atThreshold.savingsPotential.status, "AVAILABLE");
+});
+
 test("un minimo estremo breve non diventa automaticamente il Q25", () => {
   const result = analyze(600, [
     { price: 520, observedAt: atDay(-1) },
@@ -174,19 +197,8 @@ test("current non superiore al target produce NOT_APPLICABLE senza target consum
   }
 });
 
-test("storico incompleto o qualità insufficiente non produce target consumer", () => {
-  const missingStartState = analyze(120, [
-    { price: 100, observedAt: atDay(10) },
-    { price: 90, observedAt: atDay(30) },
-    { price: 80, observedAt: atDay(60) },
-    { price: 70, observedAt: atDay(80) },
-  ]);
-  const tooFewObservations = analyze(120, [
-    { price: 100, observedAt: atDay(-1) },
-    { price: 90, observedAt: atDay(20) },
-    { price: 80, observedAt: atDay(40) },
-    { price: 70, observedAt: atDay(60) },
-  ]);
+test("storico assente, troncato o con durata valida insufficiente non produce target consumer", () => {
+  const emptyHistory = analyze(120, []);
   const truncated = analyze(120, constantPriceHistory(100), true);
   const insufficientValidDuration = analyze(120, [
     { price: null, observedAt: atDay(-1) },
@@ -200,9 +212,10 @@ test("storico incompleto o qualità insufficiente non produce target consumer", 
     { price: null, observedAt: atDay(71) },
   ]);
 
+  assert.equal(insufficientValidDuration.validPriceDurationDays, 4);
+
   for (const result of [
-    missingStartState,
-    tooFewObservations,
+    emptyHistory,
     truncated,
     insufficientValidDuration,
   ]) {

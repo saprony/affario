@@ -3,12 +3,10 @@ import {
   getProductAnalysisPresentation,
   type ProductAnalysisPresentation,
 } from "@/lib/productAnalysis";
-import AffarioPriceAlert from "@/components/AffarioPriceAlert";
 import {
   AFFARIO_LOWEST_12_MONTHS_LABEL,
   AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL,
 } from "@/lib/affarioAdvice";
-import { getAffarioPriceAlertOpportunity } from "@/lib/affarioPriceAlert";
 import type {
   AffarioAdviceRecommendation,
   AffarioAdviceTone,
@@ -132,14 +130,6 @@ export default function ProductPriceAnalysis({
     presentation.amazonCta?.priority === "NEUTRAL"
       ? presentation.amazonCta
       : null;
-  const alertOpportunity = getAffarioPriceAlertOpportunity({
-    recommendation: state.data.advice.recommendation,
-    currentPrice:
-      state.data.publicMode === "full"
-        ? state.data.buyBox.currentPrice
-        : null,
-    savingsPotential: state.data.savingsPotential,
-  });
 
   return (
     <section
@@ -202,25 +192,21 @@ export default function ProductPriceAnalysis({
 
           {presentation.isBuyBoxAvailable ? (
             <div className="mt-2">
-              <h4 className="font-extrabold text-gray-900">
-                Prezzo attuale su Amazon
+              <h4 className="text-xl font-black text-gray-900 sm:text-2xl">
+                Ultimo prezzo rilevato:{" "}
+                <span className="text-green-700">
+                  {presentation.currentPrice}
+                </span>
               </h4>
-              <p className="mt-1 text-3xl font-black text-green-700">
-                {presentation.currentPrice}
-              </p>
-              <p className="mt-1 text-sm text-gray-500">
-                {presentation.priceTimestamp ??
-                  "Orario del prezzo non disponibile."}
-              </p>
             </div>
           ) : (
             <div className="mt-2">
               <h4 className="font-extrabold text-gray-900">
-                Prezzo attuale su Amazon non disponibile
+                Ultimo prezzo rilevato non disponibile
               </h4>
               <p className="mt-1 text-sm text-gray-600">
-                Al momento non è disponibile un prezzo attuale per questa
-                variante.
+                Al momento non è disponibile un ultimo prezzo rilevato per
+                questa variante.
               </p>
             </div>
           )}
@@ -277,22 +263,6 @@ export default function ProductPriceAnalysis({
             {presentation.savingsPotential.message}
           </p>
         </div>
-      )}
-
-      {alertOpportunity &&
-        state.data.publicMode === "full" &&
-        state.data.savingsPotential.status === "AVAILABLE" && (
-          <AffarioPriceAlert
-            exactAsin={state.data.asin}
-            targetPrice={state.data.savingsPotential.targetPrice}
-            opportunity={alertOpportunity}
-          />
-        )}
-
-      {presentation.publicMode === "review" && (
-        <p className="mt-5 text-center text-sm text-gray-500">
-          Gli alert automatici saranno disponibili prossimamente.
-        </p>
       )}
 
       {neutralAmazonCta && <AmazonCtaLink cta={neutralAmazonCta} />}

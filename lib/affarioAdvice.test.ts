@@ -17,8 +17,7 @@ import {
 } from "./affarioAdvice";
 
 const RELIABLE_HISTORY = {
-  observationCount: 4,
-  coverageDays: 7,
+  validPriceDurationDays: 7,
   minimumPrice365Days: null,
   hasReliable365DayCoverage: false,
   minimumPriceSinceAvailable: null,
@@ -75,20 +74,28 @@ test("valori nulli o non validi non producono uno score", () => {
   assert.equal(calculateAffarioScore(90, 110, 100), null);
 });
 
+test("uno stato Buy Box stabile per oltre 60 giorni consente il consiglio", () => {
+  const advice = createAffarioAdvice({
+    currentPrice: 1_739,
+    minimumPrice90Days: 1_739,
+    averagePrice90Days: 1_739,
+    ...RELIABLE_HISTORY,
+    validPriceDurationDays: 72,
+  });
+
+  assert.equal(advice.status, "AVAILABLE");
+  assert.equal(advice.score, 100);
+  assert.equal(advice.recommendation, "BUY_NOW");
+});
+
 test("storico insufficiente non espone score o verdetto forte", () => {
-  for (const historyQuality of [
-    { observationCount: 3, coverageDays: 7 },
-    { observationCount: 4, coverageDays: 6.99 },
-  ]) {
+  for (const validPriceDurationDays of [0, 6.99, Number.NaN, Infinity]) {
     const advice = createAffarioAdvice({
       currentPrice: 80,
       minimumPrice90Days: 80,
       averagePrice90Days: 100,
-      minimumPrice365Days: null,
-      hasReliable365DayCoverage: false,
-      minimumPriceSinceAvailable: null,
-      hasReliableSinceAvailableCoverage: false,
-      ...historyQuality,
+      ...RELIABLE_HISTORY,
+      validPriceDurationDays,
     });
 
     assert.deepEqual(advice, {
@@ -121,8 +128,7 @@ test("il riconoscimento annuale non introduce una raccomandazione con Score insu
     currentPrice: 80,
     minimumPrice90Days: 80,
     averagePrice90Days: 100,
-    observationCount: 1,
-    coverageDays: 0,
+    validPriceDurationDays: 0,
     minimumPrice365Days: 80,
     hasReliable365DayCoverage: true,
     minimumPriceSinceAvailable: null,

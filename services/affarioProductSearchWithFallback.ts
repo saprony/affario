@@ -3,8 +3,6 @@ import "server-only";
 import {
   AFFARIO_PRODUCT_SEARCH_MAX_RESULTS,
   groupAffarioExternalProductCandidates,
-  hasAffarioSpecificModelSignal,
-  hasCompleteAffarioIdentityMatch,
   prepareAffarioProductSearchQuery,
   rankAffarioExternalProductFamilies,
 } from "@/lib/affarioProductSearch";
@@ -159,13 +157,7 @@ export function createAffarioProductSearchWithFallback(
       preparedQuery.normalizedQuery,
       localResult.results
     );
-    const strongLocalModelIdentity =
-      hasAffarioSpecificModelSignal(preparedQuery) &&
-      localResult.results.some((family) =>
-        hasCompleteAffarioIdentityMatch(preparedQuery, family)
-      );
-
-    if (exactLocalAsinSearch || strongLocalModelIdentity) {
+    if (exactLocalAsinSearch) {
       return localOnlyResponse(localResult, 0);
     }
 

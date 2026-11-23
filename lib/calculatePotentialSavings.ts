@@ -1,8 +1,4 @@
-import {
-  AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS,
-  AFFARIO_MINIMUM_HISTORY_OBSERVATIONS,
-} from "./affarioAdvice";
-import { analyzePriceHistoryQuality } from "./analyzePriceHistory";
+import { AFFARIO_MINIMUM_VALID_PRICE_DURATION_DAYS } from "./affarioAdvice";
 import type { AffarioSavingsPotential } from "../types/productAnalysis";
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
@@ -170,7 +166,6 @@ export function calculatePotentialSavings(
 
   if (
     input.isTruncated ||
-    !isPositiveFiniteNumber(input.currentPrice) ||
     !Number.isFinite(windowStartTimestamp) ||
     !Number.isFinite(windowEndTimestamp) ||
     windowStartTimestamp >= windowEndTimestamp
@@ -186,52 +181,20 @@ export function calculatePotentialSavings(
     return insufficientAnalysis(calendarCoverageDays);
   }
 
-  let hasStartState = false;
-  let currentState: number | null = null;
-
-  for (const observation of observations) {
-    if (observation.timestamp > windowStartTimestamp) {
-      break;
-    }
-
-    hasStartState = true;
-    currentState = observation.price;
-  }
-
-  if (!hasStartState) {
-    return insufficientAnalysis(calendarCoverageDays);
-  }
-
-  const observationsInWindow = observations.filter(
-    (observation) =>
-      observation.timestamp >= windowStartTimestamp &&
-      observation.timestamp <= windowEndTimestamp
-  );
-  const quality = analyzePriceHistoryQuality(
-    observationsInWindow
-      .filter((observation) => observation.price !== null)
-      .map((observation) => ({
-        price: observation.price as number,
-        observedAt: observation.observedAt,
-      }))
-  );
-
-  if (
-    quality.observationCount < AFFARIO_MINIMUM_HISTORY_OBSERVATIONS ||
-    quality.coverageDays < AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS
-  ) {
-    return insufficientAnalysis(calendarCoverageDays);
-  }
-
   const durationsByPrice = new Map<number, number>();
+  // Each event sets the state until the next event or the snapshot.
+  // Time before the first known state contributes no price duration.
+  let currentState: number | null = null;
   let cursorTimestamp = windowStartTimestamp;
   let validPriceDurationMilliseconds = 0;
 
   for (const observation of observations) {
-    if (
-      observation.timestamp <= windowStartTimestamp ||
-      observation.timestamp > windowEndTimestamp
-    ) {
+    if (observation.timestamp > windowEndTimestamp) {
+      break;
+    }
+
+    if (observation.timestamp <= windowStartTimestamp) {
+      currentState = observation.price;
       continue;
     }
 
@@ -254,7 +217,8 @@ export function calculatePotentialSavings(
     validPriceDurationMilliseconds / MILLISECONDS_PER_DAY;
 
   if (
-    validPriceDurationDays < AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS
+    validPriceDurationDays < AFFARIO_MINIMUM_VALID_PRICE_DURATION_DAYS ||
+    !isPositiveFiniteNumber(input.currentPrice)
   ) {
     return insufficientAnalysis(
       calendarCoverageDays,

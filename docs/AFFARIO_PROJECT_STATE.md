@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 15 settembre 2026.
+Ultimo aggiornamento: 23 novembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -24,6 +24,14 @@ Prima di iniziare qualsiasi nuova funzione:
 ## 2. Snapshot Git verificato
 
 - Branch: `master`.
+- Il commit attualmente in Production su Git/Vercel è
+  `8347d62716f5d92686f261a33b9a5f8ba8f91ba9`.
+- Il blocco pre-pilot descritto in questo aggiornamento esiste soltanto nel
+  working tree locale: non è ancora committato né pubblicato.
+- Per questo blocco non sono stati eseguiti commit, push o deploy.
+
+Riferimenti storici precedenti:
+
 - Commit di partenza della Funzione 047A.1:
   `a871d4cccb85a2e8e94f2a4f33d16e5065ca0ab5`.
 - Commit di implementazione della Funzione 047A.2:
@@ -46,7 +54,9 @@ Prima di iniziare qualsiasi nuova funzione:
   validata localmente e con migration remota applicata. Il job Cron resta
   inattivo e l'attivazione reale è rinviata al go-live.
 
-Questo snapshot è storico: prima di agire verificare sempre Git, che ha precedenza.
+I riferimenti precedenti sono storici: prima di agire verificare sempre Git,
+che ha precedenza. Lo stato canonico pre-pilot corrente è quello locale non
+pubblicato descritto sopra.
 
 ## 3. Missione e confini della V1
 
@@ -98,6 +108,17 @@ Stack attuale:
 - Vercel;
 - futura Amazon Creators API.
 
+Runtime pre-pilot validato:
+
+- ambiente locale: Node.js `22.23.5` e npm `10.9.9`;
+- Vercel allineato a Node.js `22.x`;
+- Next.js aggiornato localmente da `16.3.4` a `16.4.6`;
+- `eslint-config-next` aggiornato localmente da `16.3.4` a `16.4.6`;
+- `npm audit`: zero vulnerabilità.
+
+Gli aggiornamenti runtime e dipendenze di questo blocco sono ancora locali,
+non committati e non pubblicati.
+
 Principio provider-agnostic:
 
 > provider → adapter AFFARIO → modello/core AFFARIO → UI
@@ -125,9 +146,10 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La **FUNZIONE 047B.2B è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: i titoli delle search card sono abbreviati esclusivamente a livello presentazionale e non incorporano suffissi che coincidono con valori variante variabili; gli attributi tecnici osservati `MemoryStorageCapacity` e `RamMemoryInstalledSize` usano le label consumer **Memoria** e **RAM**, con deduplicazione conservativa del riepilogo.
 - La **FUNZIONE 047B.2C1 è CLOSED / PRODUCTION PASS**: 047B-009 e 047B-011 sono
   risolti; le query testuali generiche combinano catalogo locale e discovery
-  provider, mentre exact ASIN locale e strong local identity possono evitare
-  la Search esterna. Merge, deduplicazione e ranking restano deterministici e
-  il risultato pubblico contiene al massimo 10 famiglie.
+  provider. Nel blocco locale pre-pilot, anche una strong local model identity
+  testuale continua verso la discovery esterna; soltanto un exact ASIN già
+  presente localmente può evitarla. Merge, deduplicazione e ranking restano
+  deterministici e il risultato pubblico contiene al massimo 10 famiglie.
 - La **FUNZIONE 047B.2C2 è CLOSED / PRODUCTION PASS**: le Search Keepa ripetute per la
   stessa query normalizzata sono protette da una cache distribuita persistente
   con TTL di 24 ore e stampede protection tramite le lease Postgres esistenti.
@@ -139,12 +161,25 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
   design normale o il comportamento del selector.
 - La **FUNZIONE 039 è completata e validata** con il flusso **ricerca → famiglia consumer → variante esatta → Analizza il prezzo → `/api/products/[asin]` → Buy Box + storico 90 giorni**.
 - La chiamata prodotto parte esclusivamente dall'azione esplicita **Analizza il prezzo**; una protezione single-flight impedisce doppie richieste concorrenti.
-- La UI presenta la Buy Box / Featured Offer con l'etichetta consumer definitiva **Prezzo attuale su Amazon**, senza fallback `AMAZON` o `NEW`, e mantiene visibili minimo Buy Box 90 giorni, media Buy Box 90 giorni e `lastBuyBoxUpdate` formattato in `Europe/Rome`.
+- In modalità FULL la UI presenta la Buy Box / Featured Offer con la copy
+  definitiva **“Ultimo prezzo rilevato: X €”**, senza fallback `AMAZON` o `NEW`
+  e senza mostrare timestamp. Minimo e media Buy Box 90 giorni restano
+  visibili. La modalità REVIEW non espone prezzo corrente, storico o timestamp.
 - Se la Buy Box è assente, la UI non mostra `0 €`; gli errori terminano il loading e consentono esclusivamente un retry volontario, senza retry automatici nascosti.
 - La lookup esegue al massimo una seconda lettura iniziale DB read-only prima di Keepa; non esiste alcun retry automatico Keepa.
 - La **FUNZIONE 040 è completata e validata**: il primo Consiglio AFFARIO reale è incluso nella stessa risposta prodotto e nella UI di analisi.
 - La formula V1 usa la posizione della Buy Box attuale tra minimo e media Buy Box degli ultimi 90 giorni e produce un Affario Score deterministico da 0 a 100 con le fasce canoniche **Ottimo momento**, **Buon prezzo**, **Prezzo nella media** e **Conviene aspettare**.
-- Con meno di 4 osservazioni valide o meno di 7 giorni di copertura, il consiglio espone **Storico ancora insufficiente** senza Score numerico né verdetto Compra/Aspetta.
+- Keepa rappresenta lo storico con serie event-based: un singolo evento prezzo
+  può descrivere uno stato stabile per molti giorni. AFFARIO non usa quindi il
+  numero grezzo di eventi come proxy della durata; ogni stato prezzo resta
+  valido fino all'evento successivo o allo snapshot corrente.
+- La qualità del Consiglio AFFARIO richiede almeno 7 giorni complessivi con
+  stato Buy Box valido. Gli intervalli con valore nullo restano esclusi e il
+  Q25 continua a essere ponderato per la durata temporale degli stati validi.
+  La correzione elimina il falso **“Storico ancora insufficiente”** per serie
+  rade ma temporalmente sufficienti.
+- Validazione reale della correzione su iPhone completata con risultato
+  **ACQUISTA ORA** e Affario Score **100/100**.
 - Le raccomandazioni operative tipizzate sono `BUY_NOW`, `BUY`, `NEUTRAL`, `WAIT` e `NONE`; la CTA Amazon resta indipendente dalla raccomandazione e usa il link affiliato dell'ASIN esatto analizzato.
 - Il Consiglio AFFARIO entra con una micro-animazione discreta e finita, disabilitata quando il sistema richiede `prefers-reduced-motion`.
 - La **FUNZIONE 041 è completata** con la gerarchia `LOWEST_12_MONTHS` → `LOWEST_SINCE_AVAILABLE` → `null`.
@@ -250,10 +285,28 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - Dalla Funzione 037, `GET /api/search/products?q=...` è collegato all'orchestratore local-first e restituisce soltanto il DTO pubblico AFFARIO.
 - Il servizio locale è `searchAffarioProducts(query)`.
 - L'orchestratore server-side `searchAffarioProductsWithFallback(query)`
-  applica il flusso local-first con espansione provider selettiva: exact ASIN
-  locale e strong local identity possono restare local-only; una query
-  testuale generica combina invece catalogo AFFARIO e discovery provider.
+  applica il flusso local-first ma, per ogni query testuale, combina catalogo
+  AFFARIO e discovery provider tramite la cache Keepa esistente. Una strong
+  local model identity non interrompe più la discovery; soltanto un exact ASIN
+  già presente localmente può restare local-only.
 - La ricerca normalizza e tokenizza, applica ranking leggibile e privilegia i risultati che soddisfano tutti i token significativi della query, senza riempire i risultati principali con match parziali quando esistono match completi.
+- Il ranking per identità considera brand, model, titolo, posizione e
+  prossimità dei token. Per query come `iPhone 18`, il prodotto principale
+  precede gli accessori compatibili; gli accessori pertinenti restano comunque
+  disponibili più in basso. I bonus model/variant duplicati vengono eliminati
+  quando la stessa evidenza è già coperta da titolo o brand.
+- Per query generiche di modello, fra famiglie con identity match completo e
+  forza simile, il ranking usa come segnale aggiuntivo la reale **consumer
+  variant richness**. La richness misura valori distinti normalizzati per
+  dimensione consumer — per esempio memoria, colore, capacità, configurazione,
+  taglia o stile — e non usa `variants.length` come bonus cieco.
+- Il bonus richness è disattivato quando la query specifica memoria, colore o
+  un'altra variante concreta, così il listing/famiglia più preciso può
+  precedere quello generico. La soluzione non contiene hardcode POCO, Xiaomi,
+  Apple o iPhone.
+- Validazione reale pre-pilot: `iPhone 18` ordina i prodotti principali sopra
+  gli accessori; `POCO X8 PRO MAX` ordina la famiglia completa con più
+  configurazioni sopra i listing singoli equivalenti.
 - Il catalogo locale e `EXTERNAL_PROVIDER` condividono la stessa regola provider-agnostic di costruzione delle famiglie consumer e ricompongono ogni variante con il proprio ASIN e insieme di attributi.
 - `parentAsin` resta un'informazione tecnica e non definisce necessariamente una singola famiglia consumer; `Style` può discriminare sotto-famiglie quando il parent Amazon comprende modelli commercialmente distinti.
 - Validazione reale del catalogo persistito: `dreame matrix` → `AFFARIO_CATALOG` → una famiglia consumer con Matrix10 Pro e Matrix10 Ultra.
@@ -292,6 +345,20 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 
 ### 6.4 Alert
 
+Decisione canonica pre-pilot:
+
+- **ALERT PUBBLICO: OFF** sia in REVIEW sia in FULL;
+- nessun form email, CTA alert, invito a lasciare l'email o target collegato
+  all'alert è presente nella UI pubblica;
+- monitoraggio automatico **OFF**;
+- il Supabase Cron `affario-price-alert-monitoring-hourly` esiste ma resta
+  `active=false`;
+- `ALERT_MONITORING_ENABLED` non è attivato;
+- i 7 alert storici di prova sono stati eliminati dal database; alert rimasti:
+  **0**.
+
+Il backend alert è conservato nel progetto per un eventuale uso futuro.
+
 Esistono già:
 
 - creazione alert in Supabase;
@@ -323,7 +390,8 @@ Non è ancora implementato l'invio reale delle notifiche intermedie.
 - `NEW` e `AMAZON` non sono fallback automatici del prezzo principale.
 - Se la Buy Box è assente, il prezzo/offerta è esplicitamente non disponibile; non mostrare `0 €` inventato.
 - Un valore reale pari a zero, per esempio spedizione gratuita, resta distinto da dato assente.
-- `lastBuyBoxUpdate` indica quando Keepa ha rilevato/aggiornato la Buy Box e alimenterà la UI “Prezzo rilevato alle HH:MM”.
+- `lastBuyBoxUpdate` indica internamente quando Keepa ha rilevato/aggiornato la
+  Buy Box, ma la UI pubblica non mostra più data o orario del rilevamento.
 - `lastKeepaCheckAt` è distinto da `lastBuyBoxUpdate`.
 
 ### 7.2 Cache Keepa
@@ -347,6 +415,9 @@ Non è ancora implementato l'invio reale delle notifiche intermedie.
 
 ### 7.4 Alert e Amazon
 
+- La decisione pre-pilot prevalente è **ALERT PUBBLICO OFF**: backend e codice
+  restano disponibili, ma creazione, gestione e raccolta email non vengono
+  proposte nella normale esperienza pubblica REVIEW o FULL.
 - L'alert è legato alla variante/ASIN esatto, non al seller.
 - Il seller può cambiare senza cambiare l'identità dell'alert.
 - La deduplicazione V1 usa l'indice UNIQUE corrente
@@ -599,13 +670,24 @@ Questa nota non contiene email, indirizzi o dati personali.
 
 ### 11.2 Amazon
 
-Esiste una richiesta scritta separata sull'uso di Keepa per storico, monitoraggio e alert nel sito affiliato. Amazon ha trasferito il caso al reparto tecnico; la risposta definitiva è ancora pendente.
+Il tracking ID Amazon Associates confermato è `affario-21`. La Creators API
+non è ancora attiva.
+
+Amazon Associates vieta price tracking e price alerting salvo autorizzazione
+specifica. Per ragioni di prodotto e compliance, nel pilot iniziale gli alert
+pubblici e il monitoraggio automatico restano quindi disattivati.
 
 Conseguenze:
 
 - sviluppo locale delle integrazioni Keepa: consentito;
-- pubblicazione su `affario.it` delle funzionalità reali Keepa/alert: gate da chiudere con risposta Amazon;
+- nessun alert pubblico o monitoraggio automatico nel pilot iniziale;
+- un'eventuale richiesta di autorizzazione Amazon sarà valutata soltanto dopo
+  traffico reale, vendite qualificate ed eventuale accesso alla Creators API;
 - l'autorizzazione Keepa non equivale all'autorizzazione Amazon.
+
+La direzione futura è raggiungere i requisiti Amazon e migrare
+progressivamente catalogo e offerta corrente verso dati ufficiali Amazon.
+Keepa resta per ora il provider di intelligence e storico del motore interno.
 
 ## 12. Sicurezza e dati sensibili
 
@@ -1131,8 +1213,9 @@ Il safety check certifica:
 #### Comportamento canonico
 
 - Exact ASIN locale: provider Search non necessaria.
-- Strong local identity: provider Search può essere evitata.
-- Generic text query: ricerca ibrida con catalogo locale e provider discovery.
+- Strong local identity testuale: provider Search ancora necessaria, tramite
+  la cache query Keepa quando disponibile.
+- Ogni query testuale: ricerca ibrida con catalogo locale e provider discovery.
 - Fino a 20 Product Object provider vengono valutati prima di
   grouping/ranking.
 - Il merge local/provider è deterministico, deduplica per `familyId` e overlap
@@ -1361,7 +1444,8 @@ Il safety check certifica:
 - **Sony WH-1000XM5 PASS**: variant selector corretto, analisi completa,
   **Prezzo nella media**, Affario Score **60/100**, nessun prezzo Amazon,
   media/minimo 90 giorni, availability/Buy Box o timestamp numerico esposto;
-  copy REVIEW corretta, form alert assente e nota alert prossimamente presente.
+  copy REVIEW corretta e form alert assente. La successiva decisione pre-pilot
+  ha rimosso anche la nota promozionale sugli alert.
 - Il testo derivato AFFARIO **“Il prezzo attuale è in linea con la media
   recente.”** è accettato in REVIEW.
 - **realme**: **Storico ancora insufficiente** osservato; non è un blocker 049A e il
@@ -1454,6 +1538,45 @@ Il safety check certifica:
 - Search, Product API, scoring, CTA Amazon, affiliate tag, alert, database,
   Keepa e Brevo restano invariati. Monitoring e Cron restano OFF.
 
+### 12.21 STATO CANONICO PRE-PILOT — 23 NOVEMBRE 2026
+
+#### Pilot pubblico iniziale
+
+- Il pilot pubblico iniziale resta in modalità **REVIEW**.
+- L'obiettivo è aumentare la visibilità e misurare visite, ricerche, click
+  verso Amazon ed eventuali acquisti attribuiti al tracking ID `affario-21`.
+- La CTA Amazon usa sempre l'exact ASIN nel formato
+  `https://www.amazon.it/dp/{ASIN}?tag=affario-21`.
+- Il link CTA è marcato `sponsored noopener noreferrer` e la disclosure di
+  affiliazione è visibile.
+- Non attivare `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` per il pilot iniziale.
+  FULL resta disponibile localmente per i test.
+
+#### Alert e compliance
+
+- **ALERT PUBBLICO: OFF** e monitoraggio automatico **OFF**.
+- Nessun form email o CTA alert è esposto nella UI pubblica, sia REVIEW sia
+  FULL. Il backend alert resta conservato nel progetto.
+- Il Cron `affario-price-alert-monitoring-hourly` resta `active=false` e
+  `ALERT_MONITORING_ENABLED` non è attivato.
+- I 7 alert storici di prova sono stati eliminati; alert rimasti nel database:
+  **0**.
+- La motivazione di prodotto/compliance è il divieto Amazon Associates di
+  price tracking/price alerting senza autorizzazione specifica. Un'eventuale
+  richiesta sarà valutata soltanto dopo traffico reale, vendite qualificate ed
+  eventuale accesso alla Creators API.
+
+#### Verifiche finali del blocco locale
+
+- `npm test`: **326/326 PASS**;
+- `npm run lint`: **PASS**;
+- `npm run typecheck`: **PASS**;
+- `npm run build`: **PASS**;
+- `git diff --check`: **PASS**.
+
+Questo blocco resta locale e non pubblicato: nessun commit, push o deploy è
+stato eseguito.
+
 ## 13. Necessario prima del FULL LIVE
 
 AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
@@ -1465,10 +1588,10 @@ necessari:
    e lookup, mantenendo famiglia → variante → exact ASIN;
 3. preservare il motore AFFARIO sui dati reali senza inventare l'algoritmo
    definitivo dello Score;
-4. attivare alert consumer, monitoraggio e scheduler soltanto dopo
-   autorizzazione e completare
-   l'invio intermedio se confermato nel perimetro V1; l'invio target è già
-   implementato;
+4. mantenere alert consumer, monitoraggio e scheduler disattivati; una futura
+   riattivazione richiederà una decisione separata e un'autorizzazione Amazon
+   specifica, da valutare soltanto dopo traffico reale, vendite qualificate ed
+   eventuale accesso alla Creators API;
 5. garantire che ogni controllo sia aggregato per ASIN e rispetti cache/capacità Keepa;
 6. completare hardening, verifica segreti, gestione errori e test
    mobile/desktop; chiudere il gate dei default ACL di `supabase_admin` tramite
@@ -1518,11 +1641,13 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - Le Funzioni 001–007 non hanno una mappatura canonica certa: non inventarla.
 - La Funzione 013 non ha una mappatura canonica certa: non inventarla.
 - La formula definitiva dell'Affario Score deve ancora essere validata e definita sui dati reali; i valori demo restano provvisori.
-- La risposta tecnica definitiva Amazon resta **OPEN** e blocca il passaggio
-  **FULL LIVE**, l'esposizione dei dati di price tracking raw e la riattivazione
-  degli alert consumer; non blocca la modalità prudenziale PUBLIC REVIEW.
+- L'autorizzazione Amazon specifica per price tracking/price alerting non è
+  disponibile. Questo mantiene **FULL LIVE** e la riattivazione degli alert
+  consumer fuori dal pilot iniziale; non blocca la modalità prudenziale
+  PUBLIC REVIEW.
 - Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
-  attivato; resta inattivo fino al go-live esplicitamente autorizzato.
+  attivato; resta inattivo fino a un'eventuale decisione futura esplicitamente
+  autorizzata.
 - La FUNZIONE 046B2 di lock distribuito è completata e la migration è applicata
   al remoto.
 - `loadActivePriceAlerts()` non pagina: il limite massimo righe
@@ -1552,6 +1677,14 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
+- Avviare il pilot pubblico iniziale in modalità **REVIEW**, senza impostare
+  `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` e senza riattivare alert, monitoring o
+  Cron.
+- Misurare visite, ricerche, click verso Amazon ed eventuali acquisti
+  attribuiti al tracking ID `affario-21`.
+- Valutare l'autorizzazione Amazon e l'eventuale accesso alla Creators API solo
+  dopo traffico reale e vendite qualificate; fino ad allora Keepa resta il
+  provider interno di intelligence e storico.
 - La **FUNZIONE 050C è CLOSED / PASS**: le 3 guide P1 hanno title/meta/H1,
   aperture, H2 e linking interno ottimizzati; il manual content QA è PASS,
   slug/canonical e PUBLIC REVIEW restano invariati.

@@ -7,10 +7,8 @@ import {
   type AffarioPotentialSavingsAnalysis,
 } from "@/lib/calculatePotentialSavings";
 import {
-  analyzePriceHistoryQuality,
   analyzePriceHistorySinceAvailableMinimum,
   analyzePriceHistoryWindowMinimum,
-  type PriceHistoryQuality,
 } from "@/lib/analyzePriceHistory";
 import {
   normalizeKeepaAsin,
@@ -98,7 +96,6 @@ export type AffarioProductLookupResult = {
   product: AffarioLookupProduct;
   buyBox: AffarioLookupBuyBox;
   buyBox90Days: AffarioLookupBuyBox90Days;
-  buyBoxHistory90Days: PriceHistoryQuality;
   potentialSavingsAnalysis: AffarioPotentialSavingsAnalysis;
   buyBox365Days: AffarioLookupBuyBox365Days;
   buyBoxSinceAvailable: AffarioLookupBuyBoxSinceAvailable;
@@ -547,12 +544,10 @@ function buildLookupResult(
 
   const lastBuyBoxUpdate = snapshot.last_buy_box_updated_at;
   const tokensConsumed = usage?.tokensConsumed ?? 0;
-  const history90DaysStartedAt =
-    nowMilliseconds - NINETY_DAYS_IN_MILLISECONDS;
-  const targetWindowEndedAt = snapshot.requested_at;
-  const targetWindowStartedAt = new Date(
+  const history90DaysEndedAt = snapshot.requested_at;
+  const history90DaysStartedAt = new Date(
     getTimestampMilliseconds(
-      targetWindowEndedAt,
+      history90DaysEndedAt,
       "keepa_snapshots.requested_at"
     ) - NINETY_DAYS_IN_MILLISECONDS
   ).toISOString();
@@ -593,22 +588,11 @@ function buildLookupResult(
       isCompleteSeries: historyStartEvidence.isCompleteSeries,
       isTruncated: buyBoxHistory365DaysIsTruncated,
     });
-  const buyBoxHistory90Days = analyzePriceHistoryQuality(
-    buyBoxHistoryPoints
-      .filter(
-        (observation) =>
-          Date.parse(observation.observedAt) >= history90DaysStartedAt
-      )
-      .map((observation) => ({
-        price: observation.price ?? Number.NaN,
-        observedAt: observation.observedAt,
-      }))
-  );
   const potentialSavingsAnalysis = calculatePotentialSavings({
     currentPrice: centsToEuros(snapshot.buybox_current_cents),
     observations: buyBoxHistoryPoints,
-    windowStart: targetWindowStartedAt,
-    windowEnd: targetWindowEndedAt,
+    windowStart: history90DaysStartedAt,
+    windowEnd: history90DaysEndedAt,
     isTruncated: buyBoxHistory365DaysIsTruncated,
   });
 
@@ -651,7 +635,6 @@ function buildLookupResult(
       minimumInEuros: centsToEuros(snapshot.min90_cents),
       minimumObservedAt: snapshot.min90_observed_at,
     },
-    buyBoxHistory90Days,
     potentialSavingsAnalysis,
     buyBox365Days: {
       minimumInEuros: buyBox365Days.minimumPrice,

@@ -11,8 +11,8 @@ export function buildAffarioProductAdvice(
     currentPrice: product.buyBox.currentIncludingShippingInEuros,
     minimumPrice90Days: product.buyBox90Days.minimumInEuros,
     averagePrice90Days: product.buyBox90Days.averageInEuros,
-    observationCount: product.buyBoxHistory90Days.observationCount,
-    coverageDays: product.buyBoxHistory90Days.coverageDays,
+    validPriceDurationDays:
+      product.potentialSavingsAnalysis.validPriceDurationDays,
     minimumPrice365Days: product.buyBox365Days.minimumInEuros,
     hasReliable365DayCoverage:
       product.buyBox365Days.hasReliableCoverage,

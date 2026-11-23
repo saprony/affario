@@ -371,6 +371,375 @@ test("ranking esterno conserva solo i match completi quando disponibili", () => 
   );
 });
 
+test("ranking esterno mette i prodotti iPhone 18 prima degli accessori pertinenti", () => {
+  const families = [
+    family({
+      familyId: "ACCESSORY-ESR",
+      title: "ESR Classic Hybrid Cover per iPhone 18 Pro",
+      brand: "ESR",
+      model: "Classic Hybrid 18",
+      representativeAsin: "B0ESR18000",
+      variants: Array.from({ length: 8 }, (_, index) => ({
+        asin: `B0ESR18${String(index).padStart(3, "0")}`,
+        attributes: {
+          Color: `Colore ${index + 1}`,
+          Style: `iPhone 18 Pro Classic Hybrid ${index + 1}`,
+        },
+      })),
+    }),
+    family({
+      familyId: "ACCESSORY-QASYFANC",
+      title: "Qasyfanc Magnetica Cover per iPhone 18",
+      brand: "Qasyfanc",
+      model: "MAGNETICA-18",
+      representativeAsin: "B0QASY1801",
+    }),
+    family({
+      familyId: "IPHONE-18-PRO",
+      title: "Apple iPhone 18 Pro",
+      brand: "Apple",
+      model: "A3101",
+      representativeAsin: "B0IPH18P01",
+    }),
+    family({
+      familyId: "IPHONE-18-PRO-MAX",
+      title: "Apple iPhone 18 Pro Max",
+      brand: "Apple",
+      model: "A3102",
+      representativeAsin: "B0IPH18PM1",
+    }),
+  ];
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("iPhone 18"),
+    families,
+    null
+  );
+  const rankedIds = ranked.map(({ familyId }) => familyId);
+  const firstAccessoryIndex = Math.min(
+    rankedIds.indexOf("ACCESSORY-ESR"),
+    rankedIds.indexOf("ACCESSORY-QASYFANC")
+  );
+
+  assert.deepEqual(rankedIds.slice(0, 2), [
+    "IPHONE-18-PRO",
+    "IPHONE-18-PRO-MAX",
+  ]);
+  assert.ok(firstAccessoryIndex >= 2);
+  assert.equal(rankedIds.includes("ACCESSORY-ESR"), true);
+  assert.equal(rankedIds.includes("ACCESSORY-QASYFANC"), true);
+});
+
+test("una query accessorio specifica continua a privilegiare la cover richiesta", () => {
+  const esrCover = family({
+    familyId: "ACCESSORY-ESR",
+    title: "ESR Classic Hybrid Cover per iPhone 18 Pro",
+    brand: "ESR",
+    model: "CLASSIC-HYBRID",
+    representativeAsin: "B0ESR18001",
+  });
+  const iphone = family({
+    familyId: "IPHONE-18-PRO",
+    title: "Apple iPhone 18 Pro",
+    brand: "Apple",
+    model: "A3101",
+    representativeAsin: "B0IPH18P01",
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("ESR Classic Hybrid Cover"),
+    [iphone, esrCover],
+    null
+  );
+
+  assert.equal(ranked[0].familyId, "ACCESSORY-ESR");
+});
+
+test("la prossimita dell'identita nel titolo vale per prodotti non Apple", () => {
+  const accessory = family({
+    familyId: "GENERIC-ACCESSORY",
+    title: "CaseCo Rugged Shield compatibile con AlphaPhone 20",
+    brand: "CaseCo",
+    model: "RUGGED-20",
+    representativeAsin: "B0ALPHAC01",
+  });
+  const product = family({
+    familyId: "GENERIC-PRODUCT",
+    title: "Example AlphaPhone 20 Pro",
+    brand: "Example",
+    model: "AP20-PRO",
+    representativeAsin: "B0ALPHAP01",
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("AlphaPhone 20"),
+    [accessory, product],
+    null
+  );
+
+  assert.deepEqual(ranked.map(({ familyId }) => familyId), [
+    "GENERIC-PRODUCT",
+    "GENERIC-ACCESSORY",
+  ]);
+});
+
+test("ranking esterno conserva la priorita assoluta dell'ASIN esatto", () => {
+  const exact = family({
+    familyId: "EXACT-ASIN-FAMILY",
+    title: "Example Phone",
+    brand: "Example",
+    model: "P1",
+    representativeAsin: "B0EXACT001",
+  });
+  const titleMention = family({
+    familyId: "ASIN-TITLE-MENTION",
+    title: "CaseCo Cover compatibile con B0EXACT001",
+    brand: "CaseCo",
+    model: "C1",
+    representativeAsin: "B0DECOY001",
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("B0EXACT001"),
+    [titleMention, exact],
+    null
+  );
+
+  assert.deepEqual(ranked.map(({ familyId }) => familyId), [
+    "EXACT-ASIN-FAMILY",
+  ]);
+});
+
+test("ranking esterno conserva l'exact model come segnale forte", () => {
+  const titleMatch = family({
+    familyId: "TITLE-MATCH",
+    title: "Other ZX 9000 accessorio compatibile",
+    brand: "Other",
+    model: "C1",
+    representativeAsin: "B0TITLE001",
+  });
+  const exactModel = family({
+    familyId: "EXACT-MODEL",
+    title: "Example dispositivo premium",
+    brand: "Example",
+    model: "ZX 9000",
+    representativeAsin: "B0MODEL001",
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("ZX 9000"),
+    [titleMatch, exactModel],
+    null
+  );
+
+  assert.equal(ranked[0].familyId, "EXACT-MODEL");
+});
+
+test("una query modello generica privilegia la famiglia consumer piu ricca", () => {
+  const singleListing = family({
+    familyId: "POCO-X8-SINGLE",
+    title: "POCO X8 Pro Max 12 GB 512 GB",
+    brand: "POCO",
+    model: "POCO X8 Pro Max",
+    representativeAsin: "B0POCOS001",
+    variants: [
+      {
+        asin: "B0POCOS001",
+        attributes: { Memory: "12+512GB", Color: "Nero" },
+      },
+    ],
+  });
+  const completeFamily = family({
+    familyId: "POCO-X8-FAMILY",
+    title: "POCO X8 Pro Max",
+    brand: "POCO",
+    model: "25069PTEBG",
+    representativeAsin: "B0POCOF001",
+    variants: [
+      {
+        asin: "B0POCOF001",
+        attributes: { Memory: "12+256GB", Color: "Nero" },
+      },
+      {
+        asin: "B0POCOF002",
+        attributes: { Memory: "12+512GB", Color: "Nero" },
+      },
+      {
+        asin: "B0POCOF003",
+        attributes: { Memory: "12+512GB", Color: "Arancione" },
+      },
+      {
+        asin: "B0POCOF004",
+        attributes: { Memory: "12+256GB", Color: "Blu" },
+      },
+    ],
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("POCO X8 PRO MAX"),
+    [singleListing, completeFamily],
+    null
+  );
+
+  assert.deepEqual(ranked.map(({ familyId }) => familyId), [
+    "POCO-X8-FAMILY",
+    "POCO-X8-SINGLE",
+  ]);
+});
+
+test("una query memoria specifica conserva la priorita del listing preciso", () => {
+  const preciseListing = family({
+    familyId: "POCO-X8-12-512",
+    title: "POCO X8 Pro Max 12 GB 512 GB",
+    brand: "POCO",
+    model: "POCO X8 Pro Max",
+    representativeAsin: "B0POCOS001",
+    variants: [
+      {
+        asin: "B0POCOS001",
+        attributes: { Memory: "12+512GB", Color: "Nero" },
+      },
+    ],
+  });
+  const genericFamily = family({
+    familyId: "POCO-X8-FAMILY",
+    title: "POCO X8 Pro Max",
+    brand: "POCO",
+    model: "25069PTEBG",
+    representativeAsin: "B0POCOF001",
+    variants: [
+      {
+        asin: "B0POCOF001",
+        attributes: { Memory: "12+256GB", Color: "Nero" },
+      },
+      {
+        asin: "B0POCOF002",
+        attributes: { Memory: "12+512GB", Color: "Arancione" },
+      },
+    ],
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("POCO X8 PRO MAX 12 512"),
+    [genericFamily, preciseListing],
+    null
+  );
+
+  assert.equal(ranked[0].familyId, "POCO-X8-12-512");
+});
+
+test("una query colore specifica conserva la priorita del listing preciso", () => {
+  const orangeListing = family({
+    familyId: "ALPHAPHONE-ORANGE",
+    title: "Example AlphaPhone 20 Arancione",
+    brand: "Example",
+    model: "AP20-ORANGE",
+    representativeAsin: "B0ALPHAO01",
+    variants: [
+      {
+        asin: "B0ALPHAO01",
+        attributes: { Color: "Arancione", Size: "512 GB" },
+      },
+    ],
+  });
+  const genericFamily = family({
+    familyId: "ALPHAPHONE-FAMILY",
+    title: "Example AlphaPhone 20",
+    brand: "Example",
+    model: "AP20",
+    representativeAsin: "B0ALPHAF01",
+    variants: [
+      {
+        asin: "B0ALPHAF01",
+        attributes: { Color: "Nero", Size: "256 GB" },
+      },
+      {
+        asin: "B0ALPHAF02",
+        attributes: { Color: "Arancione", Size: "512 GB" },
+      },
+      {
+        asin: "B0ALPHAF03",
+        attributes: { Color: "Blu", Size: "512 GB" },
+      },
+    ],
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("AlphaPhone 20 arancione"),
+    [genericFamily, orangeListing],
+    null
+  );
+
+  assert.equal(ranked[0].familyId, "ALPHAPHONE-ORANGE");
+});
+
+test("molte varianti accessorio non superano l'identita del prodotto", () => {
+  const product = family({
+    familyId: "ALPHAPHONE-PRODUCT",
+    title: "AlphaPhone 20",
+    brand: "Example",
+    model: "AP20",
+    representativeAsin: "B0ALPHAP01",
+  });
+  const accessory = family({
+    familyId: "ALPHAPHONE-ACCESSORY",
+    title: "CaseCo Rugged Shield compatibile con AlphaPhone 20",
+    brand: "CaseCo",
+    model: "RUGGED-20",
+    representativeAsin: "B0ALPHAC01",
+    variants: Array.from({ length: 24 }, (_, index) => ({
+      asin: `B0AC${String(index).padStart(6, "0")}`,
+      attributes: {
+        Color: `Colore ${index % 8}`,
+        Style: `Configurazione ${index % 6}`,
+      },
+    })),
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("AlphaPhone 20"),
+    [accessory, product],
+    null
+  );
+
+  assert.deepEqual(ranked.map(({ familyId }) => familyId), [
+    "ALPHAPHONE-PRODUCT",
+    "ALPHAPHONE-ACCESSORY",
+  ]);
+});
+
+test("varianti duplicate non simulano una ricchezza consumer", () => {
+  const duplicatedFamily = family({
+    familyId: "DUPLICATED-FAMILY",
+    title: "ExamplePhone 30",
+    brand: "Example",
+    model: "ExamplePhone 30",
+    representativeAsin: "B0DUPL0001",
+    variants: Array.from({ length: 24 }, (_, index) => ({
+      asin: `B0DP${String(index).padStart(6, "0")}`,
+      attributes: { Memory: "12+512GB", Color: "Nero" },
+    })),
+  });
+  const distinctFamily = family({
+    familyId: "DISTINCT-FAMILY",
+    title: "ExamplePhone 30",
+    brand: "Example",
+    model: "ExamplePhone 30",
+    representativeAsin: "B0DIST0001",
+    variants: [
+      {
+        asin: "B0DIST0001",
+        attributes: { Memory: "12+256GB", Color: "Nero" },
+      },
+      {
+        asin: "B0DIST0002",
+        attributes: { Memory: "12+512GB", Color: "Blu" },
+      },
+    ],
+  });
+  const ranked = rankAffarioExternalProductFamilies(
+    prepareAffarioProductSearchQuery("ExamplePhone 30"),
+    [duplicatedFamily, distinctFamily],
+    null
+  );
+
+  assert.deepEqual(ranked.map(({ familyId }) => familyId), [
+    "DISTINCT-FAMILY",
+    "DUPLICATED-FAMILY",
+  ]);
+});
+
 test("suddivide Style diversi senza dipendere da marchi o modelli noti", () => {
   const variants = [
     variant("GENERIC-A1", "Alpha20 Standard"),
@@ -698,7 +1067,68 @@ test("orchestrator exact ASIN locale preserva nove varianti e non chiama il prov
   assert.equal(result.data.families[0].variants.length, 9);
 });
 
-test("orchestrator evita l'espansione per un forte modello locale e preserva Sony", async () => {
+test("orchestrator espande un forte modello locale e conserva listing POCO distinti", async () => {
+  const localPoco = family({
+    familyId: "B0GX14PS9Y",
+    title: "XIAOMI POCO X8 Pro Max",
+    brand: "XIAOMI",
+    model: "POCO X8 Pro MAX",
+    representativeAsin: "B0GX14PS9Y",
+  });
+  const providerFamilyVariants: readonly AffarioProductSearchVariant[] = [
+    {
+      asin: "B0POCOX801",
+      attributes: { Memory: "12+256 GB", Color: "Black" },
+    },
+    {
+      asin: "B0POCOX802",
+      attributes: { Memory: "12+512 GB", Color: "Blue" },
+    },
+    {
+      asin: "B0POCOX803",
+      attributes: { Memory: "16+512 GB", Color: "Silver" },
+    },
+  ];
+  const providerCandidates = [
+    candidate({
+      asin: "B0GX14PS9Y",
+      title: "XIAOMI POCO X8 Pro Max",
+      brand: "XIAOMI",
+      model: "POCO X8 Pro MAX",
+    }),
+    candidate({
+      asin: "B0POCOX801",
+      title: "POCO X8 Pro Max Smartphone",
+      brand: "POCO",
+      model: "POCO X8 Pro Max",
+      parentAsin: "B0POCOFAM2",
+      variants: providerFamilyVariants,
+    }),
+  ];
+  let providerCalls = 0;
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, [localPoco]),
+    searchProvider: async (query) => {
+      providerCalls += 1;
+      return providerResult(query, providerCandidates);
+    },
+  });
+
+  const result = await search("POCO X8 PRO MAX");
+  const returnedFamilyIds = result.data.families.map(({ familyId }) => familyId);
+  const providerFamily = result.data.families.find(
+    ({ familyId }) => familyId === "B0POCOFAM2"
+  );
+
+  assert.equal(providerCalls, 1);
+  assert.equal(result.data.source, "HYBRID");
+  assert.equal(result.data.families.length, 2);
+  assert.equal(returnedFamilyIds.includes("B0GX14PS9Y"), true);
+  assert.equal(returnedFamilyIds.includes("B0POCOFAM2"), true);
+  assert.equal(providerFamily?.variants.length, 3);
+});
+
+test("orchestrator espande anche un forte modello locale e preserva Sony", async () => {
   const sonyVariants: readonly AffarioProductSearchVariant[] = [
     { asin: "B09Y2LL45F", attributes: { Style: "Con Custodia Rigida", Color: "Argento" } },
     { asin: "B09Y2MYL5C", attributes: { Style: "Con Custodia Rigida", Color: "Nero" } },
@@ -739,7 +1169,7 @@ test("orchestrator evita l'espansione per un forte modello locale e preserva Son
   });
   const result = await search("Sony WH-1000XM5");
 
-  assert.equal(providerCalls, 0);
+  assert.equal(providerCalls, 1);
   assert.equal(result.data.source, "AFFARIO_CATALOG");
   assert.deepEqual(result.data.families.map(({ familyId }) => familyId), [
     "B0FG8TC6HL",
@@ -910,22 +1340,25 @@ test("orchestrator valuta venti candidati e restituisce solo le dieci famiglie f
   );
 });
 
-test("orchestrator degrada ai risultati locali se il provider fallisce", async () => {
-  const localIphone = family({
-    familyId: "IPHONE-PARENT",
-    title: "Apple iPhone 17 Pro",
-    brand: "Apple",
-    model: "IPHONE17PRO",
-    representativeAsin: "B0IPHONE01",
+test("orchestrator degrada a un forte risultato locale se il provider fallisce", async () => {
+  const localPoco = family({
+    familyId: "B0GX14PS9Y",
+    title: "XIAOMI POCO X8 Pro Max",
+    brand: "XIAOMI",
+    model: "POCO X8 Pro MAX",
+    representativeAsin: "B0GX14PS9Y",
   });
+  let providerCalls = 0;
   const search = createAffarioProductSearchWithFallback({
-    searchLocal: async (query) => localResult(query, [localIphone]),
+    searchLocal: async (query) => localResult(query, [localPoco]),
     searchProvider: async () => {
+      providerCalls += 1;
       throw new KeepaClientError("provider unavailable", "NETWORK_ERROR");
     },
   });
-  const result = await search("iphone");
+  const result = await search("POCO X8 PRO MAX");
 
+  assert.equal(providerCalls, 1);
   assert.equal(result.data.source, "AFFARIO_CATALOG");
   assert.equal(result.data.status, "MATCHES_FOUND");
   assert.equal(result.serverReport.externalRequests, 1);
@@ -1394,7 +1827,7 @@ test("cache hit unita al catalogo locale conserva merge e source HYBRID", async 
   assert.equal(cachedProvider.providerCalls, 0);
 });
 
-test("exact ASIN e strong identity locali non leggono la query cache", async () => {
+test("exact ASIN locale evita la cache, strong identity testuale la consulta", async () => {
   const iphone = family({
     familyId: "LOCAL-IPHONE-17",
     title: "Apple iPhone 17 Pro",
@@ -1424,7 +1857,7 @@ test("exact ASIN e strong identity locali non leggono la query cache", async () 
   await search("B0IPHONE01");
   const sonyResult = await search("Sony WH-1000XM5");
 
-  assert.equal(cachedProvider.cacheReads, 0);
+  assert.equal(cachedProvider.cacheReads, 1);
   assert.equal(cachedProvider.providerCalls, 0);
   assert.deepEqual(sonyResult.data.families.map(({ familyId }) => familyId), [
     "LOCAL-SONY-XM5",

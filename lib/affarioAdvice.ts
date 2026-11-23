@@ -6,8 +6,7 @@ import type {
   AffarioAdviceTone,
 } from "../types/affarioAdvice";
 
-export const AFFARIO_MINIMUM_HISTORY_OBSERVATIONS = 4;
-export const AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS = 7;
+export const AFFARIO_MINIMUM_VALID_PRICE_DURATION_DAYS = 7;
 export const AFFARIO_LOWEST_12_MONTHS_LABEL =
   "🏆 PREZZO PIÙ BASSO DEGLI ULTIMI 12 MESI";
 export const AFFARIO_LOWEST_SINCE_AVAILABLE_LABEL =
@@ -17,8 +16,7 @@ export type AffarioAdviceInput = {
   currentPrice: number | null;
   minimumPrice90Days: number | null;
   averagePrice90Days: number | null;
-  observationCount: number;
-  coverageDays: number;
+  validPriceDurationDays: number;
   minimumPrice365Days: number | null;
   hasReliable365DayCoverage: boolean;
   minimumPriceSinceAvailable: number | null;
@@ -203,10 +201,8 @@ export function createAffarioAdvice(
   const priceHighlight = getAffarioPriceHighlight(input);
 
   if (
-    !Number.isInteger(input.observationCount) ||
-    input.observationCount < AFFARIO_MINIMUM_HISTORY_OBSERVATIONS ||
-    !Number.isFinite(input.coverageDays) ||
-    input.coverageDays < AFFARIO_MINIMUM_HISTORY_COVERAGE_DAYS
+    !Number.isFinite(input.validPriceDurationDays) ||
+    input.validPriceDurationDays < AFFARIO_MINIMUM_VALID_PRICE_DURATION_DAYS
   ) {
     return getInsufficientDataAdvice(priceHighlight);
   }

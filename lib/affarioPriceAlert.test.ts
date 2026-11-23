@@ -352,3 +352,20 @@ test("la creazione alert è fail-closed in review prima di ogni elaborazione", (
 test("in full il gate lascia invariato il flusso alert esistente", () => {
   assert.equal(isAffarioPriceAlertCreationEnabled("full"), true);
 });
+
+test("la UI pubblica conserva ASPETTA ma non propone alert o raccolta email", () => {
+  const componentSource = readFileSync(
+    new URL("../components/ProductPriceAnalysis.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(componentSource, /WAIT:\s*"ASPETTA"/u);
+  assert.doesNotMatch(componentSource, /<AffarioPriceAlert/u);
+  assert.doesNotMatch(componentSource, /getAffarioPriceAlertOpportunity/u);
+  assert.doesNotMatch(componentSource, /<form/u);
+  assert.doesNotMatch(componentSource, /type="email"/u);
+  assert.doesNotMatch(
+    componentSource,
+    /Gli alert automatici saranno disponibili prossimamente/u
+  );
+});
