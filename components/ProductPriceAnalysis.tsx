@@ -202,11 +202,12 @@ export default function ProductPriceAnalysis({
           ) : (
             <div className="mt-2">
               <h4 className="font-extrabold text-gray-900">
-                Ultimo prezzo rilevato non disponibile
+                Prezzo corrente non disponibile
               </h4>
               <p className="mt-1 text-sm text-gray-600">
-                Al momento non è disponibile un ultimo prezzo rilevato per
-                questa variante.
+                Al momento AFFARIO non rileva una Buy Box attiva per questa
+                variante. Verifica il prezzo e la disponibilità direttamente su
+                Amazon.
               </p>
             </div>
           )}
