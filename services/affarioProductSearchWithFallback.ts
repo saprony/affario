@@ -14,10 +14,16 @@ import {
   ProductSearchQueryCacheError,
   searchKeepaProductCandidatesWithCache,
 } from "@/services/productSearchQueryCache";
+import {
+  markProductSearchAvailabilityUnknown,
+  rankProductSearchFamiliesByAvailability,
+  type ProductSearchAvailabilityRanker,
+} from "@/services/productSearchAvailability";
 import type {
   AffarioProductSearchFamily,
   AffarioProductSearchResult,
   AffarioProductSearchWithFallbackResult,
+  AffarioPublicProductSearchFamily,
 } from "@/types/productSearch";
 
 const AFFARIO_EXACT_ASIN_QUERY_PATTERN = /^[a-z0-9]{10}$/u;
@@ -42,6 +48,7 @@ export type AffarioProductSearchWithFallbackDependencies = {
   searchProvider: (
     query: string
   ) => Promise<KeepaProductSearchProviderResult>;
+  rankByAvailability?: ProductSearchAvailabilityRanker;
 };
 
 function getFamilyAsins(
@@ -125,14 +132,15 @@ function getPublicSource(
 
 function localOnlyResponse(
   localResult: AffarioProductSearchResult,
-  externalRequests: 0 | 1
+  externalRequests: 0 | 1,
+  families: readonly AffarioPublicProductSearchFamily[]
 ): AffarioProductSearchWithFallbackResponse {
   return {
     data: {
       query: localResult.query,
       source: "AFFARIO_CATALOG",
       status: "MATCHES_FOUND",
-      families: localResult.results,
+      families,
     },
     serverReport: {
       localFamiliesFound: localResult.results.length,
@@ -145,6 +153,31 @@ function localOnlyResponse(
   };
 }
 
+async function addProductSearchAvailability(
+  dependencies: AffarioProductSearchWithFallbackDependencies,
+  families: readonly AffarioProductSearchFamily[],
+  preserveUnavailable: boolean
+): Promise<readonly AffarioPublicProductSearchFamily[]> {
+  if (!dependencies.rankByAvailability) {
+    return markProductSearchAvailabilityUnknown(
+      families,
+      AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
+    );
+  }
+
+  try {
+    return await dependencies.rankByAvailability(families, {
+      preserveUnavailable,
+      maxResults: AFFARIO_PRODUCT_SEARCH_MAX_RESULTS,
+    });
+  } catch {
+    return markProductSearchAvailabilityUnknown(
+      families,
+      AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
+    );
+  }
+}
+
 export function createAffarioProductSearchWithFallback(
   dependencies: AffarioProductSearchWithFallbackDependencies
 ) {
@@ -153,12 +186,21 @@ export function createAffarioProductSearchWithFallback(
   ): Promise<AffarioProductSearchWithFallbackResponse> {
     const localResult = await dependencies.searchLocal(query);
     const preparedQuery = prepareAffarioProductSearchQuery(localResult.query);
+    const exactAsinQuery = AFFARIO_EXACT_ASIN_QUERY_PATTERN.test(
+      preparedQuery.normalizedQuery
+    );
     const exactLocalAsinSearch = isExactLocalAsinSearch(
       preparedQuery.normalizedQuery,
       localResult.results
     );
     if (exactLocalAsinSearch) {
-      return localOnlyResponse(localResult, 0);
+      const families = await addProductSearchAvailability(
+        dependencies,
+        localResult.results,
+        true
+      );
+
+      return localOnlyResponse(localResult, 0, families);
     }
 
     let providerResult: KeepaProductSearchProviderResult;
@@ -167,11 +209,18 @@ export function createAffarioProductSearchWithFallback(
       providerResult = await dependencies.searchProvider(query);
     } catch (error) {
       if (localResult.results.length > 0) {
+        const families = await addProductSearchAvailability(
+          dependencies,
+          localResult.results,
+          exactAsinQuery
+        );
+
         return localOnlyResponse(
           localResult,
           error instanceof ProductSearchQueryCacheError
             ? error.externalRequests
-            : 1
+            : 1,
+          families
         );
       }
 
@@ -185,10 +234,15 @@ export function createAffarioProductSearchWithFallback(
       localResult.results,
       providerFamilies
     );
-    const families = rankAffarioExternalProductFamilies(
+    const rankedFamilies = rankAffarioExternalProductFamilies(
       preparedQuery,
       mergedFamilies,
-      AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
+      null
+    );
+    const families = await addProductSearchAvailability(
+      dependencies,
+      rankedFamilies,
+      exactAsinQuery
     );
     const localFamilyIds = new Set(
       localResult.results.map(({ familyId }) => familyId)
@@ -223,4 +277,5 @@ export const searchAffarioProductsWithFallback =
   createAffarioProductSearchWithFallback({
     searchLocal: searchAffarioProducts,
     searchProvider: searchKeepaProductCandidatesWithCache,
+    rankByAvailability: rankProductSearchFamiliesByAvailability,
   });

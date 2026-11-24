@@ -1,10 +1,10 @@
 import ProductVariantSelector from "@/components/ProductVariantSelector";
 import type { ProductAnalysisState } from "@/types/productAnalysis";
-import type { AffarioProductSearchFamily } from "@/types/productSearch";
+import type { AffarioPublicProductSearchFamily } from "@/types/productSearch";
 
 type ProductListProps = {
   query: string;
-  families: readonly AffarioProductSearchFamily[];
+  families: readonly AffarioPublicProductSearchFamily[];
   analysisState: ProductAnalysisState;
   onVariantChange: (familyId: string) => void;
   onAnalyzeVariant: (familyId: string, asin: string) => void;

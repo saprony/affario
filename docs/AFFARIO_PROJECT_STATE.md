@@ -1621,6 +1621,31 @@ Il safety check certifica:
 Questo blocco resta locale e non pubblicato: nessun commit, push o deploy è
 stato eseguito.
 
+### 12.22 Availability-aware Search — fase 1
+
+- La disponibilità Buy Box è un segnale secondario applicato soltanto dopo il
+  ranking di rilevanza esistente. L'ordine stabile è **AVAILABLE → UNKNOWN →
+  UNAVAILABLE** e l'ordine di rilevanza resta invariato all'interno di ogni
+  gruppo.
+- Il segnale usa esclusivamente l'ultimo snapshot `keepa_snapshots` disponibile
+  per ciascun ASIN negli ultimi 60 minuti. Snapshot più vecchi non provano né
+  disponibilità né indisponibilità.
+- Una famiglia è AVAILABLE se almeno un suo ASIN è available; è UNAVAILABLE
+  soltanto quando tutti i suoi ASIN hanno una verifica recente e risultano
+  unavailable; negli altri casi è UNKNOWN.
+- Le famiglie UNAVAILABLE vengono nascoste soltanto quando la ricerca contiene
+  almeno 5 famiglie AVAILABLE. Con meno di 5 AVAILABLE restano visibili in
+  fondo; una ricerca per ASIN esatto conserva sempre il risultato.
+- La fase 1 esegue una sola lettura batch Supabase read-only e fail-open. Non
+  aggiunge Product Request Keepa, non modifica il costo della Product Search,
+  il TTL della query cache o il `serverReport` delle chiamate provider reali.
+- La lista mostra soltanto gli indicatori **Prezzo disponibile**, **Prezzo da
+  verificare** e **Prezzo corrente non disponibile**, senza prezzi numerici.
+  La verifica completa del prezzo continua ad avvenire soltanto con
+  **Analizza il prezzo**.
+- Un'eventuale fase 2 potrà valutare un lightweight pre-check Keepa riservato ai
+  risultati UNKNOWN, soltanto dopo la misurazione reale del pilot.
+
 ## 13. Necessario prima della pubblicazione FULL
 
 La destinazione approvata è **FULL con alert completamente OFF**. Prima

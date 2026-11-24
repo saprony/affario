@@ -15,14 +15,26 @@ import {
   type VariantSelection,
 } from "@/lib/productVariantSelection";
 import type { ProductAnalysisState } from "@/types/productAnalysis";
-import type { AffarioProductSearchFamily } from "@/types/productSearch";
+import type {
+  AffarioProductSearchAvailabilityStatus,
+  AffarioPublicProductSearchFamily,
+} from "@/types/productSearch";
 
 type ProductVariantSelectorProps = {
-  family: AffarioProductSearchFamily;
+  family: AffarioPublicProductSearchFamily;
   query: string;
   analysisState: ProductAnalysisState;
   onVariantChange: (familyId: string) => void;
   onAnalyzeVariant: (familyId: string, asin: string) => void;
+};
+
+const AVAILABILITY_LABELS: Record<
+  AffarioProductSearchAvailabilityStatus,
+  string
+> = {
+  AVAILABLE: "Prezzo disponibile",
+  UNKNOWN: "Prezzo da verificare",
+  UNAVAILABLE: "Prezzo corrente non disponibile",
 };
 
 export default function ProductVariantSelector({
@@ -139,6 +151,10 @@ export default function ProductVariantSelector({
 
           <p className="mt-2 text-sm font-bold text-gray-500">
             {getDetectedVariantCountLabel(family.variants.length)}
+          </p>
+
+          <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+            {AVAILABILITY_LABELS[family.availabilityStatus]}
           </p>
         </div>
       </div>

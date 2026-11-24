@@ -18,6 +18,15 @@ export type AffarioProductSearchFamily = {
   variants: readonly AffarioProductSearchVariant[];
 };
 
+export type AffarioProductSearchAvailabilityStatus =
+  | "AVAILABLE"
+  | "UNKNOWN"
+  | "UNAVAILABLE";
+
+export type AffarioPublicProductSearchFamily = AffarioProductSearchFamily & {
+  availabilityStatus: AffarioProductSearchAvailabilityStatus;
+};
+
 export type AffarioProductSearchResult = {
   query: string;
   source: "AFFARIO_CATALOG";
@@ -56,5 +65,5 @@ export type AffarioProductSearchWithFallbackResult = {
   query: string;
   source: "AFFARIO_CATALOG" | "KEEPA" | "HYBRID";
   status: AffarioProductSearchWithFallbackStatus;
-  families: readonly AffarioProductSearchFamily[];
+  families: readonly AffarioPublicProductSearchFamily[];
 };

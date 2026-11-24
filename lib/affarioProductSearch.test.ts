@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -38,11 +39,18 @@ import {
   PRODUCT_SEARCH_CACHE_PAYLOAD_VERSION,
   type ProductSearchCachedCandidate,
 } from "../services/productSearchQueryCacheStore";
+import {
+  createProductSearchAvailabilityRanker,
+  MIN_AVAILABLE_FAMILIES_TO_HIDE_UNAVAILABLE,
+  PRODUCT_SEARCH_AVAILABILITY_MAX_AGE_MS,
+  type ProductSearchAvailabilitySnapshot,
+} from "../services/productSearchAvailability";
 import type {
   AffarioExternalProductCandidate,
   AffarioProductSearchFamily,
   AffarioProductSearchResult,
   AffarioProductSearchVariant,
+  AffarioPublicProductSearchFamily,
 } from "../types/productSearch";
 
 function variant(
@@ -107,6 +115,81 @@ function family({
     parentAsin,
     variants: variants ?? [{ asin: representativeAsin, attributes: {} }],
   };
+}
+
+const PRODUCT_SEARCH_AVAILABILITY_NOW = new Date(
+  "2026-11-24T12:00:00.000Z"
+);
+
+function availabilitySnapshot(
+  asin: string,
+  minutesBeforeNow: number,
+  buyboxCurrentCents: number | null
+): ProductSearchAvailabilitySnapshot {
+  return {
+    asin,
+    requested_at: new Date(
+      PRODUCT_SEARCH_AVAILABILITY_NOW.getTime() -
+        minutesBeforeNow * 60 * 1_000
+    ).toISOString(),
+    buybox_current_cents: buyboxCurrentCents,
+  };
+}
+
+function availabilityFamily(
+  familyId: string,
+  representativeAsin: string,
+  variantAsins: readonly string[] = [representativeAsin]
+): AffarioProductSearchFamily {
+  return family({
+    familyId,
+    title: `Prodotto ${familyId}`,
+    brand: "AFFARIO Test",
+    model: familyId,
+    representativeAsin,
+    variants: variantAsins.map((asin) => ({ asin, attributes: {} })),
+  });
+}
+
+function createAvailabilityRankerHarness({
+  snapshots = [],
+  error,
+}: {
+  snapshots?: readonly ProductSearchAvailabilitySnapshot[];
+  error?: Error;
+} = {}) {
+  const calls: Array<{
+    asins: readonly string[];
+    requestedAtOrAfter: string;
+  }> = [];
+  const ranker = createProductSearchAvailabilityRanker({
+    async loadRecentSnapshots(asins, requestedAtOrAfter) {
+      calls.push({ asins, requestedAtOrAfter });
+
+      if (error) {
+        throw error;
+      }
+
+      return snapshots;
+    },
+    clock: () => PRODUCT_SEARCH_AVAILABILITY_NOW,
+  });
+
+  return { calls, ranker };
+}
+
+function getAvailabilityByFamilyId(
+  families: readonly AffarioPublicProductSearchFamily[]
+): ReadonlyMap<
+  string,
+  AffarioPublicProductSearchFamily["availabilityStatus"]
+> {
+  return new Map(
+    families.map(({ familyId, availabilityStatus }) => [
+      familyId,
+      availabilityStatus,
+    ])
+  );
 }
 
 function localResult(
@@ -1030,7 +1113,7 @@ test("provider conserva tutti i venti Product Object della singola search", asyn
   assert.equal(result.data.candidates.length, 20);
 });
 
-test("orchestrator exact ASIN locale preserva nove varianti e non chiama il provider", async () => {
+test("orchestrator exact ASIN locale preserva il risultato unavailable senza chiamare il provider", async () => {
   const iphoneVariants = Array.from({ length: 9 }, (_, index) => ({
     asin: `B0IPHONE0${index + 1}`,
     attributes: { Color: `Colore ${index + 1}` },
@@ -1045,6 +1128,11 @@ test("orchestrator exact ASIN locale preserva nove varianti e non chiama il prov
     variants: iphoneVariants,
   });
   let providerCalls = 0;
+  const availabilityHarness = createAvailabilityRankerHarness({
+    snapshots: iphoneVariants.map(({ asin }) =>
+      availabilitySnapshot(asin, 5, null)
+    ),
+  });
   const search = createAffarioProductSearchWithFallback({
     searchLocal: async (query) =>
       localResult(
@@ -1058,6 +1146,7 @@ test("orchestrator exact ASIN locale preserva nove varianti e non chiama il prov
       providerCalls += 1;
       return providerResult("iphone", []);
     },
+    rankByAvailability: availabilityHarness.ranker,
   });
   const result = await search(iphoneVariants[4].asin);
 
@@ -1065,6 +1154,7 @@ test("orchestrator exact ASIN locale preserva nove varianti e non chiama il prov
   assert.equal(result.data.source, "AFFARIO_CATALOG");
   assert.equal(result.data.families[0].representativeAsin, iphoneVariants[4].asin);
   assert.equal(result.data.families[0].variants.length, 9);
+  assert.equal(result.data.families[0].availabilityStatus, "UNAVAILABLE");
 });
 
 test("orchestrator espande un forte modello locale e conserva listing POCO distinti", async () => {
@@ -1445,6 +1535,252 @@ test("ranking combinato mantiene un ordine deterministico", () => {
     firstRun.map(({ familyId }) => familyId),
     secondRun.map(({ familyId }) => familyId)
   );
+});
+
+test("availability usa in batch lo snapshot recente più nuovo per ogni ASIN", async () => {
+  const available = availabilityFamily("AVAILABLE", "B0AVL00001", [
+    "B0AVL00001",
+    "B0AVL00002",
+  ]);
+  const unavailable = availabilityFamily("UNAVAILABLE", "B0UNV00001", [
+    "B0UNV00001",
+    "B0UNV00002",
+  ]);
+  const partial = availabilityFamily("PARTIAL", "B0PAR00001", [
+    "B0PAR00001",
+    "B0PAR00002",
+  ]);
+  const stale = availabilityFamily("STALE", "B0STL00001");
+  const harness = createAvailabilityRankerHarness({
+    snapshots: [
+      availabilitySnapshot("B0AVL00001", 10, null),
+      availabilitySnapshot("B0AVL00002", 5, 12_999),
+      availabilitySnapshot("B0UNV00001", 15, null),
+      availabilitySnapshot("B0UNV00002", 40, 9_999),
+      availabilitySnapshot("B0UNV00002", 5, null),
+      availabilitySnapshot("B0PAR00001", 10, null),
+      availabilitySnapshot("B0STL00001", 61, 8_999),
+    ],
+  });
+  const result = await harness.ranker(
+    [available, unavailable, partial, stale],
+    { preserveUnavailable: false, maxResults: 10 }
+  );
+  const availabilityByFamilyId = getAvailabilityByFamilyId(result);
+
+  assert.equal(availabilityByFamilyId.get("AVAILABLE"), "AVAILABLE");
+  assert.equal(availabilityByFamilyId.get("UNAVAILABLE"), "UNAVAILABLE");
+  assert.equal(availabilityByFamilyId.get("PARTIAL"), "UNKNOWN");
+  assert.equal(availabilityByFamilyId.get("STALE"), "UNKNOWN");
+  assert.equal(harness.calls.length, 1);
+  assert.deepEqual(harness.calls[0].asins, [
+    "B0AVL00001",
+    "B0AVL00002",
+    "B0UNV00001",
+    "B0UNV00002",
+    "B0PAR00001",
+    "B0PAR00002",
+    "B0STL00001",
+  ]);
+  assert.equal(
+    harness.calls[0].requestedAtOrAfter,
+    new Date(
+      PRODUCT_SEARCH_AVAILABILITY_NOW.getTime() -
+        PRODUCT_SEARCH_AVAILABILITY_MAX_AGE_MS
+    ).toISOString()
+  );
+});
+
+test("availability ordina stabilmente AVAILABLE, UNKNOWN e UNAVAILABLE", async () => {
+  const families = [
+    availabilityFamily("UNAVAILABLE-1", "B0UNV10001"),
+    availabilityFamily("AVAILABLE-1", "B0AVL10001"),
+    availabilityFamily("UNKNOWN-1", "B0UNK10001"),
+    availabilityFamily("AVAILABLE-2", "B0AVL10002"),
+    availabilityFamily("UNAVAILABLE-2", "B0UNV10002"),
+    availabilityFamily("UNKNOWN-2", "B0UNK10002"),
+  ];
+  const harness = createAvailabilityRankerHarness({
+    snapshots: [
+      availabilitySnapshot("B0UNV10001", 5, null),
+      availabilitySnapshot("B0AVL10001", 5, 10_001),
+      availabilitySnapshot("B0AVL10002", 5, 10_002),
+      availabilitySnapshot("B0UNV10002", 5, null),
+    ],
+  });
+  const result = await harness.ranker(families, {
+    preserveUnavailable: false,
+    maxResults: 10,
+  });
+
+  assert.deepEqual(result.map(({ familyId }) => familyId), [
+    "AVAILABLE-1",
+    "AVAILABLE-2",
+    "UNKNOWN-1",
+    "UNKNOWN-2",
+    "UNAVAILABLE-1",
+    "UNAVAILABLE-2",
+  ]);
+});
+
+test("availability nasconde gli unavailable soltanto dalla quinta famiglia available", async () => {
+  const availableFamilies = Array.from(
+    { length: MIN_AVAILABLE_FAMILIES_TO_HIDE_UNAVAILABLE },
+    (_, index) =>
+      availabilityFamily(`AVAILABLE-${index}`, `B0AVL20${index}01`)
+  );
+  const unavailableFamilies = [
+    availabilityFamily("UNAVAILABLE-1", "B0UNV20001"),
+    availabilityFamily("UNAVAILABLE-2", "B0UNV20002"),
+  ];
+  const unknown = availabilityFamily("UNKNOWN", "B0UNK20001");
+  const snapshots = [
+    ...availableFamilies.map(({ representativeAsin }, index) =>
+      availabilitySnapshot(representativeAsin, 5, 20_000 + index)
+    ),
+    ...unavailableFamilies.map(({ representativeAsin }) =>
+      availabilitySnapshot(representativeAsin, 5, null)
+    ),
+  ];
+  const harness = createAvailabilityRankerHarness({ snapshots });
+  const hidden = await harness.ranker(
+    [...unavailableFamilies, ...availableFamilies, unknown],
+    { preserveUnavailable: false, maxResults: 10 }
+  );
+  const kept = await harness.ranker(
+    [...unavailableFamilies, ...availableFamilies.slice(0, 4), unknown],
+    { preserveUnavailable: false, maxResults: 10 }
+  );
+
+  assert.equal(
+    hidden.some(({ availabilityStatus }) =>
+      availabilityStatus === "UNAVAILABLE"
+    ),
+    false
+  );
+  assert.deepEqual(hidden.slice(-1).map(({ familyId }) => familyId), [
+    "UNKNOWN",
+  ]);
+  assert.deepEqual(kept.slice(-2).map(({ familyId }) => familyId), [
+    "UNAVAILABLE-1",
+    "UNAVAILABLE-2",
+  ]);
+});
+
+test("una ricerca ASIN esatta preserva il risultato unavailable", async () => {
+  const exactUnavailable = availabilityFamily("EXACT", "B0EXACT001");
+  const availableFamilies = Array.from(
+    { length: MIN_AVAILABLE_FAMILIES_TO_HIDE_UNAVAILABLE },
+    (_, index) =>
+      availabilityFamily(`AVAILABLE-${index}`, `B0AVL30${index}01`)
+  );
+  const harness = createAvailabilityRankerHarness({
+    snapshots: [
+      availabilitySnapshot(exactUnavailable.representativeAsin, 5, null),
+      ...availableFamilies.map(({ representativeAsin }, index) =>
+        availabilitySnapshot(representativeAsin, 5, 30_000 + index)
+      ),
+    ],
+  });
+  const result = await harness.ranker(
+    [exactUnavailable, ...availableFamilies],
+    { preserveUnavailable: true, maxResults: 10 }
+  );
+
+  assert.equal(
+    result.some(
+      ({ familyId, availabilityStatus }) =>
+        familyId === "EXACT" && availabilityStatus === "UNAVAILABLE"
+    ),
+    true
+  );
+});
+
+test("errore Supabase availability mantiene risultati e ordine come UNKNOWN", async () => {
+  const families = [
+    availabilityFamily("FIRST", "B0FAIL0001"),
+    availabilityFamily("SECOND", "B0FAIL0002"),
+  ];
+  const harness = createAvailabilityRankerHarness({
+    error: new Error("Supabase non disponibile"),
+  });
+  const result = await harness.ranker(families, {
+    preserveUnavailable: false,
+    maxResults: 10,
+  });
+
+  assert.deepEqual(result.map(({ familyId }) => familyId), ["FIRST", "SECOND"]);
+  assert.equal(
+    result.every(({ availabilityStatus }) => availabilityStatus === "UNKNOWN"),
+    true
+  );
+});
+
+test("availability usa una lettura batch e non introduce Product Request Keepa", () => {
+  const serviceSource = readFileSync(
+    new URL("../services/productSearchAvailability.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(serviceSource, /\.in\("asin", uniqueAsins\)/u);
+  assert.match(
+    serviceSource,
+    /\.select\("asin,requested_at,buybox_current_cents"\)/u
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /getAffarioProductByAsin|searchKeepaProducts|stats=|buybox=/u
+  );
+});
+
+test("la UI ricerca mostra solo gli indicatori availability senza prezzi numerici", () => {
+  const componentSource = readFileSync(
+    new URL("../components/ProductVariantSelector.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(componentSource, /AVAILABLE: "Prezzo disponibile"/u);
+  assert.match(componentSource, /UNKNOWN: "Prezzo da verificare"/u);
+  assert.match(
+    componentSource,
+    /UNAVAILABLE: "Prezzo corrente non disponibile"/u
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /currentPrice|buybox_current_cents|formatEuroPrice/u
+  );
+});
+
+test("availability non modifica chiamate o consumo token della ricerca Keepa", async () => {
+  const cachedProvider = createCachedProviderHarness({
+    providerCandidates: [
+      candidate({
+        asin: "B0TOKEN001",
+        title: "Example Token Phone",
+        brand: "Example",
+        model: "TOKEN-1",
+      }),
+    ],
+  });
+  let availabilityCalls = 0;
+  const availabilityHarness = createAvailabilityRankerHarness({
+    snapshots: [availabilitySnapshot("B0TOKEN001", 5, 49_999)],
+  });
+  const search = createAffarioProductSearchWithFallback({
+    searchLocal: async (query) => localResult(query, []),
+    searchProvider: cachedProvider.search,
+    async rankByAvailability(families, options) {
+      availabilityCalls += 1;
+      return availabilityHarness.ranker(families, options);
+    },
+  });
+  const result = await search("token phone");
+
+  assert.equal(availabilityCalls, 1);
+  assert.equal(cachedProvider.providerCalls, 1);
+  assert.equal(result.serverReport.externalRequests, 1);
+  assert.equal(result.serverReport.tokensConsumed, 10);
+  assert.equal(result.data.families[0].availabilityStatus, "AVAILABLE");
 });
 
 test("cache query normalizza NFKC, case e whitespace senza rimuovere punteggiatura", () => {
