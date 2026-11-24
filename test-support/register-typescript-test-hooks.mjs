@@ -37,6 +37,10 @@ registerHooks({
       };
     }
 
+    if (specifier === "next/server") {
+      return nextResolve("next/server.js", context);
+    }
+
     if (isAbsolute(specifier)) {
       const resolved = resolveProjectFile(specifier);
 

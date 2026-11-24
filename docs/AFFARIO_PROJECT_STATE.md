@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 23 novembre 2026.
+Ultimo aggiornamento: 24 novembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -140,6 +140,9 @@ Il frontend e il core non devono dipendere da Product Object, array, token o par
 - La produzione senza override usa **REVIEW** di default; lo sviluppo senza
   override usa **FULL**. `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=review|full` consente
   l'override esplicito.
+- La destinazione pubblica approvata è **FULL**, da impostare esplicitamente in
+  Production soltanto dopo validazione e pubblicazione di questo blocco. Il
+  fallback prudenziale Production → REVIEW resta invariato.
 - Dalla Funzione 038, `DemoHome` è collegata alla ricerca reale e segue il flusso approvato **query → famiglie consumer → variante → ASIN**.
 - La UI presenta un titolo prodotto semplificato, ordina semanticamente le capacità e mostra gli attributi variante con etichette coerenti: `Color` come **Colore**, `Size` come **Capacità** soltanto per valori storage e altrimenti come **Taglia**, `Style` come **Configurazione**.
 - La **FUNZIONE 047B.2A è CLOSED — IMPLEMENTED + AUTOMATED QA PASS + MANUAL QA PASS**: il selector mostra soltanto dimensioni con almeno due valori distinti nei candidati correnti, filtra esclusivamente sulle scelte espresse dall'utente e dichiara individuata una variante soltanto quando rimane un exact ASIN. Il conteggio consumer usa **varianti rilevate**, senza implicare completezza Amazon o disponibilità commerciale.
@@ -673,21 +676,23 @@ Questa nota non contiene email, indirizzi o dati personali.
 Il tracking ID Amazon Associates confermato è `affario-21`. La Creators API
 non è ancora attiva.
 
-Amazon Associates vieta price tracking e price alerting salvo autorizzazione
-specifica. Per ragioni di prodotto e compliance, nel pilot iniziale gli alert
-pubblici e il monitoraggio automatico restano quindi disattivati.
+In assenza di un'autorizzazione specifica per il price alerting, gli alert
+pubblici e il monitoraggio automatico restano disattivati. La decisione
+pubblica corrente separa questo vincolo dalla modalità di analisi: FULL mostra
+prezzi e storico tramite l'architettura Keepa esistente, senza attivare alert.
 
 Conseguenze:
 
 - sviluppo locale delle integrazioni Keepa: consentito;
-- nessun alert pubblico o monitoraggio automatico nel pilot iniziale;
+- nessun alert pubblico o monitoraggio automatico in produzione;
 - un'eventuale richiesta di autorizzazione Amazon sarà valutata soltanto dopo
   traffico reale, vendite qualificate ed eventuale accesso alla Creators API;
 - l'autorizzazione Keepa non equivale all'autorizzazione Amazon.
 
-La direzione futura è raggiungere i requisiti Amazon e migrare
-progressivamente catalogo e offerta corrente verso dati ufficiali Amazon.
-Keepa resta per ora il provider di intelligence e storico del motore interno.
+La direzione futura è migrare progressivamente catalogo, offerta corrente e
+dati applicabili verso dati ufficiali Amazon quando la Creators API sarà
+disponibile. Keepa resta per ora il provider dell'architettura dati esistente e
+dell'intelligence/storico del motore interno.
 
 ## 12. Sicurezza e dati sensibili
 
@@ -708,6 +713,8 @@ Keepa resta per ora il provider di intelligence e storico del motore interno.
 | Variabile | Ruolo |
 |---|---|
 | `NODE_ENV` | Selezione della modalità runtime e dell'esperienza pubblica Production. |
+| `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE` | Override esplicito `review|full` dei dati mostrati nell'analisi; Production senza valore resta REVIEW. |
+| `AFFARIO_PRICE_ALERTS_ENABLED` | Flag server-only fail-closed della creazione alert; richiede valore esatto `true` e modalità FULL. |
 | `PRIVACY_CONTACT_EMAIL` | Contatto mostrato nell'informativa Privacy, validato server-side. |
 | `SUPABASE_URL` | Endpoint server-side del progetto Supabase. |
 | `SUPABASE_SECRET_KEY` | Credenziale server-only per storage, catalogo e alert. |
@@ -1397,9 +1404,12 @@ Il safety check certifica:
 - Validazione: 297/297 test PASS; lint, typecheck e build PASS;
   `git diff --check` PASS.
 
-### 12.16 FUNZIONE 049A — PUBLIC REVIEW MODE
+### 12.16 FUNZIONE 049A — PUBLIC REVIEW MODE (STORICO)
 
 - Stato: **CLOSED / PASS**.
+- Questa sezione conserva lo snapshot della decisione precedente. La decisione
+  pubblica corrente è descritta nello stato canonico del 24 novembre 2026:
+  **FULL con alert completamente OFF**.
 - AFFARIO è **PUBLIC REVIEW LIVE** e non è ancora **FULL LIVE**.
 - In REVIEW restano attivi ricerca reale, selezione variante, analisi completa
   server-side, Affario Score, recommendation, Prezzo giusto AFFARIO/target
@@ -1538,19 +1548,26 @@ Il safety check certifica:
 - Search, Product API, scoring, CTA Amazon, affiliate tag, alert, database,
   Keepa e Brevo restano invariati. Monitoring e Cron restano OFF.
 
-### 12.21 STATO CANONICO PRE-PILOT — 23 NOVEMBRE 2026
+### 12.21 STATO CANONICO PRE-PUBBLICAZIONE — 24 NOVEMBRE 2026
 
-#### Pilot pubblico iniziale
+#### Destinazione pubblica FULL
 
-- Il pilot pubblico iniziale resta in modalità **REVIEW**.
+- Decisione definitiva: la produzione è destinata alla modalità **FULL**.
+- FULL mostra ultimo prezzo rilevato, minimo e media Buy Box degli ultimi 90
+  giorni, Consiglio AFFARIO, Affario Score, Risparmio Potenziale quando
+  applicabile e CTA Amazon.
+- `review | full` governa esclusivamente i dati mostrati nell'analisi prodotto e
+  non abilita più autonomamente la creazione alert.
+- Il fallback prudenziale resta invariato: Production senza
+  `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE` usa REVIEW. In questo blocco non vengono
+  modificate variabili Vercel; `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` sarà
+  impostata esplicitamente soltanto dopo validazione e pubblicazione.
 - L'obiettivo è aumentare la visibilità e misurare visite, ricerche, click
   verso Amazon ed eventuali acquisti attribuiti al tracking ID `affario-21`.
 - La CTA Amazon usa sempre l'exact ASIN nel formato
   `https://www.amazon.it/dp/{ASIN}?tag=affario-21`.
 - Il link CTA è marcato `sponsored noopener noreferrer` e la disclosure di
   affiliazione è visibile.
-- Non attivare `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` per il pilot iniziale.
-  FULL resta disponibile localmente per i test.
 
 #### PILOT METRICS
 
@@ -1564,14 +1581,23 @@ Il safety check certifica:
 - **Vercel Web Analytics** misura visite e pageview.
 - **Google Search Console** misura la visibilità su Google.
 - **Amazon Associates Central** misura click, ordini e commissioni attribuiti.
-- La migration dei contatori è predisposta nel working tree locale ma non è
-  applicata al Supabase remoto.
+- Le pilot metrics restano attive e indipendenti dalla separazione tra FULL e
+  alert.
+- La migration `20261123164345_create_affario_pilot_metrics_daily` è applicata
+  al Supabase remoto.
+- La tabella e la RPC delle pilot metrics sono state verificate.
+- Le pilot metrics `search` e `analysis` sono operative in Production.
 
 #### Alert e compliance
 
 - **ALERT PUBBLICO: OFF** e monitoraggio automatico **OFF**.
 - Nessun form email o CTA alert è esposto nella UI pubblica, sia REVIEW sia
   FULL. Il backend alert resta conservato nel progetto.
+- La creazione alert è protetta dal flag server-only
+  `AFFARIO_PRICE_ALERTS_ENABLED` ed è abilitata soltanto con modalità FULL e
+  valore esatto `true`. Variabile assente, vuota, `false` o qualsiasi altro
+  valore mantengono l'endpoint fail-closed con `503 ALERT_NOT_AVAILABLE` prima
+  di lettura email/body, lookup Keepa, accesso Supabase o invio Brevo.
 - Il Cron `affario-price-alert-monitoring-hourly` resta `active=false` e
   `ALERT_MONITORING_ENABLED` non è attivato.
 - I 7 alert storici di prova sono stati eliminati; alert rimasti nel database:
@@ -1580,10 +1606,13 @@ Il safety check certifica:
   price tracking/price alerting senza autorizzazione specifica. Un'eventuale
   richiesta sarà valutata soltanto dopo traffico reale, vendite qualificate ed
   eventuale accesso alla Creators API.
+- I dati Amazon correnti restano basati sull'architettura Keepa esistente. La
+  direzione approvata è migrare ai dati ufficiali Amazon quando la Creators API
+  sarà disponibile, senza riattivare implicitamente gli alert.
 
 #### Verifiche finali del blocco locale
 
-- `npm test`: **337/337 PASS**;
+- `npm test`: **338/338 PASS**;
 - `npm run lint`: **PASS**;
 - `npm run typecheck`: **PASS**;
 - `npm run build`: **PASS**;
@@ -1592,39 +1621,44 @@ Il safety check certifica:
 Questo blocco resta locale e non pubblicato: nessun commit, push o deploy è
 stato eseguito.
 
-## 13. Necessario prima del FULL LIVE
+## 13. Necessario prima della pubblicazione FULL
 
-AFFARIO è **PUBLIC REVIEW LIVE**. Prima del passaggio **FULL LIVE** sono
-necessari:
+La destinazione approvata è **FULL con alert completamente OFF**. Prima
+dell'impostazione esplicita di `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` in
+Production sono necessari:
 
-1. chiudere il gate Amazon prima di esporre dati di price tracking raw o
-   riattivare la creazione alert consumer su `affario.it`;
-2. preservare il flusso pubblico REVIEW già collegato alle API reali di ricerca
-   e lookup, mantenendo famiglia → variante → exact ASIN;
-3. preservare il motore AFFARIO sui dati reali senza inventare l'algoritmo
+1. validare e pubblicare il disaccoppiamento tra FULL e alert;
+2. impostare FULL in Production soltanto con un'operazione Vercel successiva ed
+   esplicitamente autorizzata, mantenendo il fallback Production → REVIEW;
+3. preservare il flusso pubblico già collegato alle API reali di ricerca e
+   lookup, mantenendo famiglia → variante → exact ASIN;
+4. preservare il motore AFFARIO sui dati reali senza inventare l'algoritmo
    definitivo dello Score;
-4. mantenere alert consumer, monitoraggio e scheduler disattivati; una futura
+5. mantenere `AFFARIO_PRICE_ALERTS_ENABLED` assente/OFF, alert consumer,
+   monitoraggio e scheduler disattivati; una futura
    riattivazione richiederà una decisione separata e un'autorizzazione Amazon
    specifica, da valutare soltanto dopo traffico reale, vendite qualificate ed
    eventuale accesso alla Creators API;
-5. garantire che ogni controllo sia aggregato per ASIN e rispetti cache/capacità Keepa;
-6. completare hardening, verifica segreti, gestione errori e test
+6. mantenere l'architettura Keepa corrente fino alla futura migrazione ai dati
+   ufficiali Amazon resa possibile dalla Creators API;
+7. garantire che ogni controllo sia aggregato per ASIN e rispetti cache/capacità Keepa;
+8. completare hardening, verifica segreti, gestione errori e test
    mobile/desktop; chiudere il gate dei default ACL di `supabase_admin` tramite
    un percorso Supabase autorizzato prima del go-live;
-7. verificare CTA e URL Amazon ufficiali nel perimetro autorizzato;
-8. eseguire deploy e smoke test soltanto con autorizzazione esplicita.
-9. definire e automatizzare una policy di scadenza/pulizia dei
+9. verificare CTA e URL Amazon ufficiali nel perimetro autorizzato;
+10. eseguire deploy e smoke test soltanto con autorizzazione esplicita.
+11. definire e automatizzare una policy di scadenza/pulizia dei
    `pending_confirmation` mai confermati, senza assumere una durata non ancora
    approvata; il
    calcolo dovrà partire dalla creazione originaria registrata in `created_at`,
    non dai resend registrati in `confirmation_requested_at`; il
    raggiungimento del target non deve invece cancellare il record storico,
    necessario alla futura validazione dell'algoritmo AFFARIO.
-10. sostituire `PRIVACY_CONTACT_EMAIL` con una casella AFFARIO reale e
+12. sostituire `PRIVACY_CONTACT_EMAIL` con una casella AFFARIO reale e
     monitorata; la creazione e configurazione di `info@affario.it` e/o
     `admin@affario.it` resta un'attività pre-go-live e le caselle non vengono
     create in questa fase.
-11. eseguire integralmente la sequenza bootstrap → migration chain su un
+13. eseguire integralmente la sequenza bootstrap → migration chain su un
     PostgreSQL/Supabase disposable e verificare lo schema risultante prima del
     go-live operativo; il bootstrap V1 non sostituisce il backup/restore
     completo di Production.
@@ -1656,10 +1690,10 @@ Le decisioni seguenti restano nella storia ma sono superate:
 - Le Funzioni 001–007 non hanno una mappatura canonica certa: non inventarla.
 - La Funzione 013 non ha una mappatura canonica certa: non inventarla.
 - La formula definitiva dell'Affario Score deve ancora essere validata e definita sui dati reali; i valori demo restano provvisori.
-- L'autorizzazione Amazon specifica per price tracking/price alerting non è
-  disponibile. Questo mantiene **FULL LIVE** e la riattivazione degli alert
-  consumer fuori dal pilot iniziale; non blocca la modalità prudenziale
-  PUBLIC REVIEW.
+- L'autorizzazione Amazon specifica per price alerting non è disponibile. Gli
+  alert consumer restano quindi OFF; questo non blocca la modalità FULL per
+  prezzi, storico 90 giorni e analisi AFFARIO basati sull'architettura Keepa
+  esistente.
 - Lo scheduler alert è applicato dalla Funzione 045 ma non configurato né
   attivato; resta inattivo fino a un'eventuale decisione futura esplicitamente
   autorizzata.
@@ -1692,14 +1726,15 @@ Le decisioni seguenti restano nella storia ma sono superate:
 
 ## 17. Prossimo passo
 
-- Avviare il pilot pubblico iniziale in modalità **REVIEW**, senza impostare
-  `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` e senza riattivare alert, monitoring o
-  Cron.
+- Validare e pubblicare il disaccoppiamento **FULL / ALERT OFF**; soltanto dopo,
+  con autorizzazione esplicita, impostare
+  `NEXT_PUBLIC_AFFARIO_PUBLIC_MODE=full` in Production.
+- Non creare né attivare `AFFARIO_PRICE_ALERTS_ENABLED`; mantenere alert,
+  monitoring e Cron OFF.
 - Misurare visite, ricerche, click verso Amazon ed eventuali acquisti
   attribuiti al tracking ID `affario-21`.
-- Valutare l'autorizzazione Amazon e l'eventuale accesso alla Creators API solo
-  dopo traffico reale e vendite qualificate; fino ad allora Keepa resta il
-  provider interno di intelligence e storico.
+- Fino alla disponibilità della Creators API, mantenere i dati Amazon
+  sull'architettura Keepa esistente; migrare in futuro ai dati ufficiali Amazon.
 - La **FUNZIONE 050C è CLOSED / PASS**: le 3 guide P1 hanno title/meta/H1,
   aperture, H2 e linking interno ottimizzati; il manual content QA è PASS,
   slug/canonical e PUBLIC REVIEW restano invariati.

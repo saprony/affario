@@ -20,8 +20,9 @@ import {
   TOO_MANY_REQUESTS_MESSAGE,
 } from "./consumerServiceMessages";
 import {
-  AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+  AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE,
   isAffarioPriceAlertCreationEnabled,
+  resolveAffarioPriceAlertCreationEnabled,
 } from "./affarioPublicMode";
 
 const availableSavings: AffarioSavingsPotential = {
@@ -326,11 +327,59 @@ test("distingue successo con conferma email e alert duplicato", async () => {
   });
 });
 
-test("la creazione alert è fail-closed in review prima di ogni elaborazione", () => {
-  assert.equal(isAffarioPriceAlertCreationEnabled("review"), false);
+test("il flag server-only abilita gli alert soltanto in full con valore true", () => {
+  for (const configuredFlag of [undefined, "", "false", "TRUE", "1"]) {
+    assert.equal(
+      resolveAffarioPriceAlertCreationEnabled({
+        publicMode: "full",
+        configuredFlag,
+      }),
+      false
+    );
+  }
+
   assert.equal(
-    AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
-    "Gli alert automatici saranno disponibili prossimamente."
+    resolveAffarioPriceAlertCreationEnabled({
+      publicMode: "full",
+      configuredFlag: "true",
+    }),
+    true
+  );
+  assert.equal(
+    resolveAffarioPriceAlertCreationEnabled({
+      publicMode: "review",
+      configuredFlag: "true",
+    }),
+    false
+  );
+});
+
+test("la creazione alert resta fail-closed prima di ogni elaborazione", () => {
+  const originalPublicMode = process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE;
+  const originalAlertFlag = process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+
+  process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE = "full";
+  delete process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+
+  try {
+    assert.equal(isAffarioPriceAlertCreationEnabled(), false);
+  } finally {
+    if (originalPublicMode === undefined) {
+      delete process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE;
+    } else {
+      process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE = originalPublicMode;
+    }
+
+    if (originalAlertFlag === undefined) {
+      delete process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+    } else {
+      process.env.AFFARIO_PRICE_ALERTS_ENABLED = originalAlertFlag;
+    }
+  }
+
+  assert.equal(
+    AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE,
+    "Gli alert automatici non sono attualmente disponibili."
   );
 
   const routeSource = readFileSync(
@@ -343,17 +392,68 @@ test("la creazione alert è fail-closed in review prima di ogni elaborazione", (
   const requestParsingIndex = routeSource.indexOf(
     "body = await readJsonRequestBody(request)"
   );
+  const keepaLookupIndex = routeSource.indexOf(
+    "const result = await getAffarioProductByAsin",
+    gateIndex
+  );
+  const supabaseWriteIndex = routeSource.indexOf(
+    "const supabase = getSupabaseServerClient()",
+    gateIndex
+  );
+  const brevoSendIndex = routeSource.indexOf(
+    "await sendAlertConfirmationEmail",
+    gateIndex
+  );
 
   assert.ok(gateIndex >= 0);
   assert.ok(requestParsingIndex > gateIndex);
+  assert.ok(keepaLookupIndex > gateIndex);
+  assert.ok(supabaseWriteIndex > gateIndex);
+  assert.ok(brevoSendIndex > gateIndex);
   assert.match(routeSource, /"ALERT_NOT_AVAILABLE"[\s\S]*503/u);
 });
 
-test("in full il gate lascia invariato il flusso alert esistente", () => {
-  assert.equal(isAffarioPriceAlertCreationEnabled("full"), true);
+test("POST alert in full senza flag risponde prima di body, Keepa, Supabase e Brevo", async () => {
+  const originalPublicMode = process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE;
+  const originalAlertFlag = process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+  let bodyRead = false;
+
+  process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE = "full";
+  delete process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+
+  try {
+    const { POST } = await import("../app/api/alerts/route");
+    const response = await POST({
+      async arrayBuffer() {
+        bodyRead = true;
+        throw new Error("Il body non deve essere letto con alert OFF.");
+      },
+    } as unknown as Request);
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "ALERT_NOT_AVAILABLE",
+        message: AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE,
+      },
+    });
+    assert.equal(bodyRead, false);
+  } finally {
+    if (originalPublicMode === undefined) {
+      delete process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE;
+    } else {
+      process.env.NEXT_PUBLIC_AFFARIO_PUBLIC_MODE = originalPublicMode;
+    }
+
+    if (originalAlertFlag === undefined) {
+      delete process.env.AFFARIO_PRICE_ALERTS_ENABLED;
+    } else {
+      process.env.AFFARIO_PRICE_ALERTS_ENABLED = originalAlertFlag;
+    }
+  }
 });
 
-test("la UI pubblica conserva ASPETTA ma non propone alert o raccolta email", () => {
+test("la UI pubblica full conserva ASPETTA ma non propone alert o raccolta email", () => {
   const componentSource = readFileSync(
     new URL("../components/ProductPriceAnalysis.tsx", import.meta.url),
     "utf8"
@@ -364,8 +464,7 @@ test("la UI pubblica conserva ASPETTA ma non propone alert o raccolta email", ()
   assert.doesNotMatch(componentSource, /getAffarioPriceAlertOpportunity/u);
   assert.doesNotMatch(componentSource, /<form/u);
   assert.doesNotMatch(componentSource, /type="email"/u);
-  assert.doesNotMatch(
-    componentSource,
-    /Gli alert automatici saranno disponibili prossimamente/u
-  );
+  assert.doesNotMatch(componentSource, /\/api\/alerts/u);
+  assert.doesNotMatch(componentSource, /Attiva alert|Crea alert/u);
+  assert.doesNotMatch(componentSource, /alert[^\n]*prossimamente/iu);
 });

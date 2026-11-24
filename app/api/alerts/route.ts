@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
-  AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+  AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE,
   isAffarioPriceAlertCreationEnabled,
 } from "@/lib/affarioPublicMode";
 import {
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
   if (!isAffarioPriceAlertCreationEnabled()) {
     return errorResponse(
       "ALERT_NOT_AVAILABLE",
-      AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE,
+      AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE,
       503
     );
   }

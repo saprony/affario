@@ -1,11 +1,18 @@
+import "server-only";
+
 export type AffarioPublicMode = "review" | "full";
 
-export const AFFARIO_REVIEW_ALERT_UNAVAILABLE_MESSAGE =
-  "Gli alert automatici saranno disponibili prossimamente.";
+export const AFFARIO_PRICE_ALERT_UNAVAILABLE_MESSAGE =
+  "Gli alert automatici non sono attualmente disponibili.";
 
 type AffarioPublicModeEnvironment = {
   configuredMode?: string;
   nodeEnv?: string;
+};
+
+type AffarioPriceAlertCreationEnvironment = {
+  publicMode: AffarioPublicMode;
+  configuredFlag?: string;
 };
 
 export function resolveAffarioPublicMode({
@@ -26,8 +33,18 @@ export function getAffarioPublicMode(): AffarioPublicMode {
   });
 }
 
+export function resolveAffarioPriceAlertCreationEnabled({
+  publicMode,
+  configuredFlag,
+}: AffarioPriceAlertCreationEnvironment): boolean {
+  return publicMode === "full" && configuredFlag === "true";
+}
+
 export function isAffarioPriceAlertCreationEnabled(
   publicMode: AffarioPublicMode = getAffarioPublicMode()
 ): boolean {
-  return publicMode === "full";
+  return resolveAffarioPriceAlertCreationEnabled({
+    publicMode,
+    configuredFlag: process.env.AFFARIO_PRICE_ALERTS_ENABLED,
+  });
 }
