@@ -17,6 +17,9 @@ const AMAZON_ITALY_DOMAIN_ID = 8;
 const ASIN_PATTERN = /^[A-Z0-9]{10}$/;
 
 export const KEEPA_PRODUCT_REQUEST_ESTIMATED_TOKENS = 3;
+export const KEEPA_AVAILABILITY_PRECHECK_MAX_ASINS = 100;
+export const KEEPA_AVAILABILITY_PRECHECK_ESTIMATED_TOKENS_PER_ASIN = 4;
+export const KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX = 18;
 export const KEEPA_SEARCH_REQUEST_ESTIMATED_TOKENS = 10;
 export const KEEPA_HTTP_TIMEOUT_MS = 30_000;
 
@@ -126,6 +129,27 @@ export type KeepaProductResult = {
 
 export type KeepaProductSearchResult = {
   products: readonly KeepaProductSummary[];
+  usage: KeepaUsage;
+};
+
+export type KeepaProductAvailabilityStatus =
+  | "AVAILABLE"
+  | "UNKNOWN"
+  | "UNAVAILABLE";
+
+export type KeepaProductAvailabilityCheck = {
+  asin: string;
+  availabilityStatus: KeepaProductAvailabilityStatus;
+  currentBuyBoxPriceCents: number | null;
+  checkedAt: string;
+  title: string | null;
+  brand: string | null;
+  model: string | null;
+  parentAsin: string | null;
+};
+
+export type KeepaProductAvailabilityBatchResult = {
+  checks: readonly KeepaProductAvailabilityCheck[];
   usage: KeepaUsage;
 };
 
@@ -784,6 +808,79 @@ function mapProductSearch(
   return mappedProducts;
 }
 
+export function mapKeepaProductAvailabilityChecks(
+  payload: Record<string, unknown>,
+  requestedAsins: readonly string[],
+  checkedAt: string
+): KeepaProductAvailabilityCheck[] {
+  const products = payload.products;
+
+  if (!Array.isArray(products)) {
+    throw new KeepaClientError(
+      "La risposta Keepa non contiene un elenco prodotti valido.",
+      "INVALID_RESPONSE"
+    );
+  }
+
+  const requestedAsinSet = new Set(requestedAsins);
+  const checksByAsin = new Map<string, KeepaProductAvailabilityCheck>();
+
+  for (const product of products) {
+    if (!isRecord(product)) {
+      continue;
+    }
+
+    const asin = readOptionalText(product.asin)?.toUpperCase();
+
+    if (
+      !asin ||
+      !requestedAsinSet.has(asin) ||
+      product.domainId !== AMAZON_ITALY_DOMAIN_ID
+    ) {
+      continue;
+    }
+
+    const stats = isRecord(product.stats) ? product.stats : null;
+    const current =
+      stats && Array.isArray(stats.current) ? stats.current : null;
+    const rawPrice = current?.[KEEPA_BUY_BOX_SHIPPING_PRICE_INDEX];
+    const availabilityStatus: KeepaProductAvailabilityStatus =
+      Number.isSafeInteger(rawPrice) && (rawPrice as number) > 0
+        ? "AVAILABLE"
+        : rawPrice === null || rawPrice === -1
+          ? "UNAVAILABLE"
+          : "UNKNOWN";
+    const parentAsin = readOptionalText(product.parentAsin)?.toUpperCase();
+
+    checksByAsin.set(asin, {
+      asin,
+      availabilityStatus,
+      currentBuyBoxPriceCents:
+        availabilityStatus === "AVAILABLE" ? (rawPrice as number) : null,
+      checkedAt,
+      title: readOptionalText(product.title) ?? null,
+      brand: readOptionalText(product.brand) ?? null,
+      model: readOptionalText(product.model) ?? null,
+      parentAsin:
+        parentAsin && ASIN_PATTERN.test(parentAsin) ? parentAsin : null,
+    });
+  }
+
+  return requestedAsins.map(
+    (asin) =>
+      checksByAsin.get(asin) ?? {
+        asin,
+        availabilityStatus: "UNKNOWN",
+        currentBuyBoxPriceCents: null,
+        checkedAt,
+        title: null,
+        brand: null,
+        model: null,
+        parentAsin: null,
+      }
+  );
+}
+
 type KeepaHttpRequestOptions = {
   context: KeepaRequestContext;
   estimatedTokenCost: number;
@@ -1060,5 +1157,49 @@ export async function getKeepaProductByAsin(
     rawProduct: mappedProduct.rawProduct,
     usage: mapUsage(payload),
     tokenBudgetStatus,
+  };
+}
+
+export async function getKeepaProductAvailabilityByAsins(
+  asins: readonly string[],
+  options: { context?: KeepaRequestContext } = {}
+): Promise<KeepaProductAvailabilityBatchResult> {
+  const normalizedAsins = [...new Set(asins.map(normalizeKeepaAsin))];
+
+  if (
+    normalizedAsins.length === 0 ||
+    normalizedAsins.length > KEEPA_AVAILABILITY_PRECHECK_MAX_ASINS
+  ) {
+    throw new KeepaClientError(
+      `Il pre-check Keepa richiede da 1 a ${KEEPA_AVAILABILITY_PRECHECK_MAX_ASINS} ASIN.`,
+      "INVALID_ASIN"
+    );
+  }
+
+  const apiKey = getApiKey();
+  const requestUrl = new URL(KEEPA_PRODUCT_ENDPOINT, KEEPA_BASE_URL);
+  requestUrl.searchParams.set("key", apiKey);
+  requestUrl.searchParams.set("domain", String(AMAZON_ITALY_DOMAIN_ID));
+  requestUrl.searchParams.set("asin", normalizedAsins.join(","));
+  requestUrl.searchParams.set("stats", "1");
+  requestUrl.searchParams.set("buybox", "1");
+  requestUrl.searchParams.set("update", "0");
+  requestUrl.searchParams.set("history", "0");
+
+  const { payload } = await requestKeepa(requestUrl, {
+    context: options.context ?? "interactive",
+    estimatedTokenCost:
+      normalizedAsins.length *
+      KEEPA_AVAILABILITY_PRECHECK_ESTIMATED_TOKENS_PER_ASIN,
+  });
+  const checkedAt = new Date().toISOString();
+
+  return {
+    checks: mapKeepaProductAvailabilityChecks(
+      payload,
+      normalizedAsins,
+      checkedAt
+    ),
+    usage: mapUsage(payload),
   };
 }

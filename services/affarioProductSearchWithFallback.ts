@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   AFFARIO_PRODUCT_SEARCH_MAX_RESULTS,
+  getAffarioExternalProductFamilyRelevanceScores,
   groupAffarioExternalProductCandidates,
   prepareAffarioProductSearchQuery,
   rankAffarioExternalProductFamilies,
@@ -15,15 +16,16 @@ import {
   searchKeepaProductCandidatesWithCache,
 } from "@/services/productSearchQueryCache";
 import {
+  getEmptyProductSearchAvailabilityPrecheckReport,
   markProductSearchAvailabilityUnknown,
   rankProductSearchFamiliesByAvailability,
+  type ProductSearchAvailabilityRankingResult,
   type ProductSearchAvailabilityRanker,
 } from "@/services/productSearchAvailability";
 import type {
   AffarioProductSearchFamily,
   AffarioProductSearchResult,
   AffarioProductSearchWithFallbackResult,
-  AffarioPublicProductSearchFamily,
 } from "@/types/productSearch";
 
 const AFFARIO_EXACT_ASIN_QUERY_PATTERN = /^[a-z0-9]{10}$/u;
@@ -31,6 +33,9 @@ const AFFARIO_EXACT_ASIN_QUERY_PATTERN = /^[a-z0-9]{10}$/u;
 export type AffarioProductSearchFallbackServerReport = {
   localFamiliesFound: number;
   externalRequests: 0 | 1;
+  availabilityPrecheckRequests: 0 | 1;
+  availabilityPrecheckAsins: number;
+  availabilityPrecheckTokensConsumed: number;
   tokensConsumed: number;
   providerCandidatesReceived: number;
   providerCandidatesConsidered: number;
@@ -133,22 +138,30 @@ function getPublicSource(
 function localOnlyResponse(
   localResult: AffarioProductSearchResult,
   externalRequests: 0 | 1,
-  families: readonly AffarioPublicProductSearchFamily[]
+  availability: ProductSearchAvailabilityRankingResult
 ): AffarioProductSearchWithFallbackResponse {
   return {
     data: {
       query: localResult.query,
       source: "AFFARIO_CATALOG",
       status: "MATCHES_FOUND",
-      families,
+      families: availability.families,
     },
     serverReport: {
       localFamiliesFound: localResult.results.length,
       externalRequests,
-      tokensConsumed: 0,
+      availabilityPrecheckRequests:
+        availability.report.availabilityPrecheckRequests,
+      availabilityPrecheckAsins:
+        availability.report.availabilityPrecheckAsins,
+      availabilityPrecheckTokensConsumed:
+        availability.report.availabilityPrecheckTokensConsumed,
+      tokensConsumed:
+        availability.report.availabilityPrecheckTokensConsumed,
       providerCandidatesReceived: 0,
       providerCandidatesConsidered: 0,
       externalFamiliesReturned: 0,
+      tokensRemaining: availability.report.tokensRemaining,
     },
   };
 }
@@ -156,25 +169,33 @@ function localOnlyResponse(
 async function addProductSearchAvailability(
   dependencies: AffarioProductSearchWithFallbackDependencies,
   families: readonly AffarioProductSearchFamily[],
-  preserveUnavailable: boolean
-): Promise<readonly AffarioPublicProductSearchFamily[]> {
+  preserveUnavailable: boolean,
+  relevanceScoreByFamilyId?: ReadonlyMap<string, number>
+): Promise<ProductSearchAvailabilityRankingResult> {
   if (!dependencies.rankByAvailability) {
-    return markProductSearchAvailabilityUnknown(
-      families,
-      AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
-    );
+    return {
+      families: markProductSearchAvailabilityUnknown(
+        families,
+        AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
+      ),
+      report: getEmptyProductSearchAvailabilityPrecheckReport(),
+    };
   }
 
   try {
     return await dependencies.rankByAvailability(families, {
       preserveUnavailable,
       maxResults: AFFARIO_PRODUCT_SEARCH_MAX_RESULTS,
+      relevanceScoreByFamilyId,
     });
   } catch {
-    return markProductSearchAvailabilityUnknown(
-      families,
-      AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
-    );
+    return {
+      families: markProductSearchAvailabilityUnknown(
+        families,
+        AFFARIO_PRODUCT_SEARCH_MAX_RESULTS
+      ),
+      report: getEmptyProductSearchAvailabilityPrecheckReport(),
+    };
   }
 }
 
@@ -194,13 +215,17 @@ export function createAffarioProductSearchWithFallback(
       localResult.results
     );
     if (exactLocalAsinSearch) {
-      const families = await addProductSearchAvailability(
+      const availability = await addProductSearchAvailability(
         dependencies,
         localResult.results,
-        true
+        true,
+        getAffarioExternalProductFamilyRelevanceScores(
+          preparedQuery,
+          localResult.results
+        )
       );
 
-      return localOnlyResponse(localResult, 0, families);
+      return localOnlyResponse(localResult, 0, availability);
     }
 
     let providerResult: KeepaProductSearchProviderResult;
@@ -209,10 +234,14 @@ export function createAffarioProductSearchWithFallback(
       providerResult = await dependencies.searchProvider(query);
     } catch (error) {
       if (localResult.results.length > 0) {
-        const families = await addProductSearchAvailability(
+        const availability = await addProductSearchAvailability(
           dependencies,
           localResult.results,
-          exactAsinQuery
+          exactAsinQuery,
+          getAffarioExternalProductFamilyRelevanceScores(
+            preparedQuery,
+            localResult.results
+          )
         );
 
         return localOnlyResponse(
@@ -220,7 +249,7 @@ export function createAffarioProductSearchWithFallback(
           error instanceof ProductSearchQueryCacheError
             ? error.externalRequests
             : 1,
-          families
+          availability
         );
       }
 
@@ -239,11 +268,18 @@ export function createAffarioProductSearchWithFallback(
       mergedFamilies,
       null
     );
-    const families = await addProductSearchAvailability(
+    const relevanceScoreByFamilyId =
+      getAffarioExternalProductFamilyRelevanceScores(
+        preparedQuery,
+        mergedFamilies
+      );
+    const availability = await addProductSearchAvailability(
       dependencies,
       rankedFamilies,
-      exactAsinQuery
+      exactAsinQuery,
+      relevanceScoreByFamilyId
     );
+    const families = availability.families;
     const localFamilyIds = new Set(
       localResult.results.map(({ familyId }) => familyId)
     );
@@ -262,12 +298,22 @@ export function createAffarioProductSearchWithFallback(
       serverReport: {
         localFamiliesFound: localResult.results.length,
         externalRequests: providerResult.serverReport.externalRequests,
-        tokensConsumed: providerResult.serverReport.tokensConsumed,
+        availabilityPrecheckRequests:
+          availability.report.availabilityPrecheckRequests,
+        availabilityPrecheckAsins:
+          availability.report.availabilityPrecheckAsins,
+        availabilityPrecheckTokensConsumed:
+          availability.report.availabilityPrecheckTokensConsumed,
+        tokensConsumed:
+          providerResult.serverReport.tokensConsumed +
+          availability.report.availabilityPrecheckTokensConsumed,
         providerCandidatesReceived:
           providerResult.serverReport.providerCandidatesReceived,
         providerCandidatesConsidered: providerResult.data.candidates.length,
         externalFamiliesReturned,
-        tokensRemaining: providerResult.serverReport.tokensRemaining,
+        tokensRemaining:
+          availability.report.tokensRemaining ??
+          providerResult.serverReport.tokensRemaining,
       },
     };
   };

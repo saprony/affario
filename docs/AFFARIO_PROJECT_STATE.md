@@ -1646,6 +1646,40 @@ stato eseguito.
 - Un'eventuale fase 2 potrà valutare un lightweight pre-check Keepa riservato ai
   risultati UNKNOWN, soltanto dopo la misurazione reale del pilot.
 
+### 12.23 Availability-aware Search — fase 2 live Buy Box
+
+- Dopo il ranking AFFARIO di pertinenza, gli ASIN ancora UNKNOWN vengono
+  verificati con un unico Product Request Keepa batch, fino a 100 ASIN per
+  ricerca. Il pre-check richiede soltanto i dati necessari alla Buy Box
+  corrente e usa `BUY_BOX_SHIPPING` (price type index 18), senza eseguire
+  l'analisi AFFARIO a 90/365 giorni.
+- Gli snapshot completi `keepa_snapshots` prodotti dalla normale analisi e
+  freschi entro 60 minuti restano la prima sorgente: AVAILABLE e UNAVAILABLE
+  recenti vengono riusati, mentre UNKNOWN o snapshot più vecchi richiedono il
+  pre-check live.
+- Il live pre-check non viene persistito in `keepa_snapshots`, per non
+  contaminare la cache della lookup completa né l'analisi a 90/365 giorni.
+  Durante il pilot è accettato che ricerche successive possano ripetere il
+  pre-check e consumare più token Keepa. Non sono introdotte nuove tabelle o
+  migration.
+- Una famiglia AVAILABLE espone il minimo delle Buy Box correnti delle sue
+  varianti (`lowestCurrentBuyBoxPriceCents` e relativo ASIN). L'ordinamento
+  rispetta prima la fascia di rilevanza AFFARIO; dentro la stessa fascia usa
+  AVAILABLE, UNKNOWN, UNAVAILABLE, poi il prezzo crescente tra gli AVAILABLE
+  e infine l'ordine di rilevanza originale.
+- La soglia resta invariata: con almeno 5 famiglie AVAILABLE gli UNAVAILABLE
+  vengono nascosti; altrimenti rimangono in fondo. Una ricerca per ASIN esatto
+  conserva sempre il relativo risultato.
+- La product search query cache di 24 ore conserva soltanto i candidati di
+  ricerca e non costituisce mai una prova di prezzo corrente. La freshness di
+  disponibilità e prezzo resta separata e limitata a 60 minuti.
+- La lista mostra **Prezzo disponibile** e, quando valido, **Da X €**; UNKNOWN
+  e UNAVAILABLE mantengono i messaggi esistenti. Storico, Score, consiglio e
+  risparmio continuano a essere mostrati soltanto dopo **Analizza il prezzo**.
+- Il consumo Keepa aggiuntivo del Product pre-check è accettato deliberatamente
+  nel pilot per migliorare la qualità UX. Il `serverReport` distingue richieste,
+  ASIN e token del pre-check e include tali token nel consumo totale reale.
+
 ## 13. Necessario prima della pubblicazione FULL
 
 La destinazione approvata è **FULL con alert completamente OFF**. Prima

@@ -1045,3 +1045,29 @@ export function rankAffarioExternalProductFamilies(
     ? rankedFamilies
     : rankedFamilies.slice(0, maxResults);
 }
+
+export function getAffarioExternalProductFamilyRelevanceScores(
+  preparedQuery: PreparedAffarioProductSearchQuery,
+  families: readonly AffarioProductSearchFamily[]
+): ReadonlyMap<string, number> {
+  const queryBrandTokens = getExactQueryBrandTokens(
+    preparedQuery,
+    families
+  );
+  const scoredFamilies = families.flatMap((family, providerIndex) => {
+    const scoredFamily = scoreExternalFamily(
+      preparedQuery,
+      family,
+      providerIndex,
+      queryBrandTokens
+    );
+
+    return scoredFamily ? [scoredFamily] : [];
+  });
+
+  return new Map(
+    keepExactAsinMatchesWhenAvailable(scoredFamilies).map(
+      ({ family, score }) => [family.familyId, score] as const
+    )
+  );
+}

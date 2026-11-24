@@ -25,6 +25,8 @@ export type AffarioProductSearchAvailabilityStatus =
 
 export type AffarioPublicProductSearchFamily = AffarioProductSearchFamily & {
   availabilityStatus: AffarioProductSearchAvailabilityStatus;
+  lowestCurrentBuyBoxPriceCents: number | null;
+  lowestCurrentBuyBoxAsin: string | null;
 };
 
 export type AffarioProductSearchResult = {

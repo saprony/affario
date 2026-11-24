@@ -14,6 +14,7 @@ import {
   getVariantSelectorSteps,
   type VariantSelection,
 } from "@/lib/productVariantSelection";
+import { formatEuroPrice } from "@/lib/productAnalysis";
 import type { ProductAnalysisState } from "@/types/productAnalysis";
 import type {
   AffarioProductSearchAvailabilityStatus,
@@ -94,6 +95,12 @@ export default function ProductVariantSelector({
     dimensions.length > 0 &&
     candidateVariants.length > 1 &&
     !hasPendingSelector;
+  const lowestCurrentBuyBoxPrice =
+    family.availabilityStatus === "AVAILABLE" &&
+    family.lowestCurrentBuyBoxPriceCents !== null &&
+    family.lowestCurrentBuyBoxPriceCents > 0
+      ? formatEuroPrice(family.lowestCurrentBuyBoxPriceCents / 100)
+      : null;
 
   function handleAttributeSelect(
     dimension: string,
@@ -153,9 +160,16 @@ export default function ProductVariantSelector({
             {getDetectedVariantCountLabel(family.variants.length)}
           </p>
 
-          <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
-            {AVAILABILITY_LABELS[family.availabilityStatus]}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+              {AVAILABILITY_LABELS[family.availabilityStatus]}
+            </p>
+            {lowestCurrentBuyBoxPrice && (
+              <p className="font-extrabold text-gray-900">
+                Da {lowestCurrentBuyBoxPrice}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
