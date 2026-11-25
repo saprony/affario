@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { guides } from "@/data/guides";
 import { AFFARIO_SITE_URL } from "@/lib/seoMetadata";
 
-const HOME_LAST_MODIFIED = new Date("2026-09-10T00:00:00.000Z");
+const HOME_LAST_MODIFIED = new Date("2026-11-24T00:00:00.000Z");
 const PRIVACY_LAST_MODIFIED = new Date("2026-09-06T00:00:00.000Z");
 const GUIDES_LAST_MODIFIED = new Date("2026-08-18T00:00:00.000Z");
 

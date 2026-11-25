@@ -1,6 +1,6 @@
 # AFFARIO — Stato canonico del progetto
 
-Ultimo aggiornamento: 24 novembre 2026.
+Ultimo aggiornamento: 25 novembre 2026.
 
 ## 1. Scopo e autorità
 
@@ -1679,6 +1679,32 @@ stato eseguito.
 - Il consumo Keepa aggiuntivo del Product pre-check è accettato deliberatamente
   nel pilot per migliorare la qualità UX. Il `serverReport` distingue richieste,
   ASIN e token del pre-check e include tali token nel consumo totale reale.
+
+### 12.24 SEO HOME — STEP 1
+
+- La baseline OpenSEO del 24 novembre 2026 rilevava una homepage scansionabile,
+  indicizzabile e presente in sitemap, con circa 37 parole iniziali e senza un
+  H1 testuale riconosciuto. Il tag `h1` conteneva solo l'immagine del logo.
+- `components/Hero.tsx` introduce un unico H1 testuale e visibile,
+  **“Conviene comprare adesso o aspettare?”**, seguito dal sottotitolo
+  “Scegli il momento giusto per comprare.” Il logo mantiene la sua posizione in
+  un elemento non-heading e usa l'alt “Logo AFFARIO”.
+- `components/DemoHome.tsx` aggiunge dopo l'area di ricerca e gli eventuali
+  risultati la sezione **“Capisci se il prezzo è davvero conveniente”**. La
+  sezione è presente nell'HTML iniziale e spiega come AFFARIO confronta il
+  prezzo corrente della variante esatta con l'andamento recente. La homepage
+  prerenderizzata contiene circa 258 parole visibili complessive.
+- La sezione include tre link interni contestuali:
+  - [comprare subito o aspettare](/guide/comprare-subito-o-aspettare);
+  - [storico del prezzo](/guide/perche-lo-storico-del-prezzo-puo-cambiare-una-decisione);
+  - [capire se un prezzo online è conveniente](/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente).
+- In `app/sitemap.ts`, `HOME_LAST_MODIFIED` è aggiornato a
+  `2026-11-24T00:00:00.000Z`. Le date delle guide restano invariate.
+- Validazione locale completata con **359/359 test superati**, lint, typecheck,
+  build e `git diff --check` superati. A causa del blocco locale NVM `NVM4306`
+  sui comandi `npm`, gli script di test, lint, typecheck e build sono stati
+  eseguiti direttamente con `node`. Verificati nell'HTML generato l'H1 unico,
+  la sezione e i tre link, oltre alla data della homepage nella sitemap.
 
 ## 13. Necessario prima della pubblicazione FULL
 

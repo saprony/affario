@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import Hero from "@/components/Hero";
 import ProductList from "@/components/ProductList";
@@ -252,6 +253,74 @@ export default function DemoHome() {
           onAnalyzeVariant={handleProductAnalysis}
         />
       ) : null}
+
+      <section
+        aria-labelledby="come-valutare-il-prezzo"
+        className="mx-auto mt-16 max-w-4xl px-5"
+      >
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-10">
+          <h2
+            id="come-valutare-il-prezzo"
+            className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl"
+          >
+            Capisci se il prezzo è davvero conveniente
+          </h2>
+
+          <div className="mt-5 space-y-4 leading-7 text-gray-600">
+            <p>
+              Quando trovi un prodotto online, uno sconto evidente può sembrare
+              sufficiente per decidere. Il prezzo barrato o la percentuale
+              mostrata dal negozio, però, non raccontano sempre quanto
+              l&apos;offerta sia davvero interessante. AFFARIO parte dal prezzo
+              corrente e lo legge nel suo contesto, per aiutarti a {" "}
+              <Link
+                href="/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente"
+                className="font-semibold text-green-700 underline decoration-green-200 decoration-2 underline-offset-2 hover:text-green-800"
+              >
+                capire se un prezzo online è conveniente
+              </Link>{" "}
+              senza fermarti al confronto con il listino.
+            </p>
+
+            <p>
+              L&apos;analisi confronta il prezzo attuale con il suo andamento
+              recente. Lo {" "}
+              <Link
+                href="/guide/perche-lo-storico-del-prezzo-puo-cambiare-una-decisione"
+                className="font-semibold text-green-700 underline decoration-green-200 decoration-2 underline-offset-2 hover:text-green-800"
+              >
+                storico del prezzo
+              </Link>{" "}
+              permette di capire se il valore di oggi è vicino ai livelli più
+              interessanti osservati oppure se, nel periodo considerato, il
+              prodotto è stato proposto a condizioni migliori. In questo modo
+              un ribasso viene valutato rispetto a dati recenti, non soltanto
+              rispetto a un prezzo di riferimento dichiarato.
+            </p>
+
+            <p>
+              Il confronto riguarda il prodotto e la variante esatta che stai
+              considerando, perché colore, memoria, taglia o configurazione
+              possono avere prezzi e andamenti diversi. Questa precisione evita
+              di confondere offerte che sembrano simili ma non lo sono davvero.
+            </p>
+
+            <p>
+              Alla fine AFFARIO traduce le informazioni in un&apos;indicazione
+              semplice: ti aiuta a valutare se è un buon momento per acquistare
+              o se può essere meglio aspettare. La scelta resta tua, ma hai più
+              contesto per decidere se {" "}
+              <Link
+                href="/guide/comprare-subito-o-aspettare"
+                className="font-semibold text-green-700 underline decoration-green-200 decoration-2 underline-offset-2 hover:text-green-800"
+              >
+                comprare subito o aspettare
+              </Link>{" "}
+              senza farti guidare soltanto dall&apos;etichetta dello sconto.
+            </p>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

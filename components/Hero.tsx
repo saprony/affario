@@ -24,17 +24,17 @@ export default function Hero({
   return (
     <>
       <header className="mx-auto flex max-w-6xl justify-center px-5 pb-2 pt-7 sm:pt-9">
-        <h1 className="w-full max-w-lg">
+        <div className="w-full max-w-lg">
           <Image
             src="/affario-logo.png"
-            alt="AFFARIO — Gli affari non si trovano... si aspettano!"
+            alt="Logo AFFARIO"
             width={2172}
             height={724}
             priority
             sizes="(max-width: 640px) calc(100vw - 2.5rem), 32rem"
             className="h-auto w-full"
           />
-        </h1>
+        </div>
       </header>
 
       <section className="mx-auto max-w-4xl px-5 pb-16 pt-8 text-center sm:pt-10">
@@ -42,7 +42,11 @@ export default function Hero({
           🟢 Price intelligence per acquisti online
         </div>
 
-        <p className="text-xl text-gray-600 sm:text-2xl">
+        <h1 className="mx-auto max-w-3xl text-3xl font-black tracking-tight text-gray-900 sm:text-5xl">
+          Conviene comprare adesso o aspettare?
+        </h1>
+
+        <p className="mt-4 text-xl text-gray-600 sm:text-2xl">
           Scegli il momento giusto per comprare.
         </p>
 
