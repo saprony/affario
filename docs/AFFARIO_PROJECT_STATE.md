@@ -1706,6 +1706,30 @@ stato eseguito.
   eseguiti direttamente con `node`. Verificati nell'HTML generato l'H1 unico,
   la sezione e i tre link, oltre alla data della homepage nella sitemap.
 
+### 12.25 SEO GUIDE — STEP 2: STORICO PREZZI AMAZON
+
+- Baseline OpenSEO del 24 novembre 2026, mercato italiano: “andamento prezzi
+  amazon” 1.600 ricerche/mese, KD 19; “storico prezzi amazon” 880
+  ricerche/mese, KD 18. La guida risultava già indicizzata secondo il dato
+  di partenza.
+- La [guida sullo storico dei prezzi Amazon](/guide/perche-lo-storico-del-prezzo-puo-cambiare-una-decisione)
+  conserva slug, URL canonico e data di pubblicazione. L'H1 è “Storico prezzi
+  Amazon: come capire quando conviene comprare”. Il meta title “Storico e
+  andamento prezzi Amazon | AFFARIO” usa il suffisso del template esistente.
+  La meta description è aggiornata.
+- La guida copre lettura dello storico, variazioni di prezzo, minimo e media
+  a 90 giorni, decisione d'acquisto e uso di AFFARIO. Include un esempio
+  ipotetico, domande frequenti e due link contestuali alla homepage. Distingue
+  i dati numerici della vista completa dal consiglio della vista di revisione.
+- La sitemap aggiorna alla data `2026-11-25T00:00:00.000Z` la sola guida
+  interessata.
+- Validazione locale: **359/359 test superati**, lint, typecheck, build e
+  `git diff --check` superati. Gli script sono stati eseguiti direttamente con
+  `node` per il blocco NVM `NVM4306` sui comandi `npm`. L'HTML generato
+  conferma title con un solo suffisso AFFARIO, H1 unico, meta description,
+  canonical e due link alla homepage. L'articolo contiene 914 parole visibili.
+  Verificate tutte le 13 voci della sitemap.
+
 ## 13. Necessario prima della pubblicazione FULL
 
 La destinazione approvata è **FULL con alert completamente OFF**. Prima

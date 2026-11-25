@@ -129,60 +129,95 @@ export const priceContextGuides: Guide[] = [
   },
   {
     slug: "perche-lo-storico-del-prezzo-puo-cambiare-una-decisione",
-    title: "Perché lo storico del prezzo può cambiare una decisione d'acquisto",
+    title: "Storico prezzi Amazon: come capire quando conviene comprare",
+    metaTitle: "Storico e andamento prezzi Amazon",
     description:
-      "Leggere l'andamento di un prezzo per distinguere un'occasione da una normale oscillazione.",
+      "Scopri come controllare lo storico e l'andamento dei prezzi Amazon per capire se un'offerta è conveniente o se è meglio aspettare.",
     publishedAt: "18 agosto 2026",
     introduction: [
-      "Il prezzo visibile oggi risponde a una domanda semplice: quanto costa adesso? Per decidere bene, però, spesso serve una seconda domanda: come si è comportato nel tempo? Lo storico aggiunge questa dimensione e permette di vedere se il valore attuale è insolito, ricorrente oppure distante dalle condizioni migliori già osservate.",
-      [
-        "Consultare l'andamento non significa prevedere con certezza il futuro. Nessuno storico garantisce che un prezzo torni a un livello precedente o che non scenda ancora. Il suo valore è diverso: riduce la dipendenza dal messaggio promozionale del momento e aiuta a ",
-        {
-          href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
-          text: "valutare se un prezzo online è davvero conveniente",
-        },
-        " prima di acquistare o attendere.",
-      ],
+      "Un'offerta su Amazon può sembrare interessante al primo sguardo. Per capire se vale la pena approfittarne, confronta la cifra di oggi con i prezzi recenti dello stesso articolo, nella stessa variante. Lo storico ti aiuta a riconoscere un prezzo insolitamente basso, un'offerta che si ripete o una cifra ancora lontana dai livelli migliori osservati.",
     ],
     sections: [
       {
-        heading: "Dal singolo prezzo a un percorso",
+        heading: "Come vedere lo storico dei prezzi Amazon",
         paragraphs: [
-          "Una cifra isolata può sembrare alta o bassa soltanto in relazione a un riferimento scelto da altri. Una sequenza nel tempo mostra invece il comportamento del prodotto. Se il prezzo torna spesso nella stessa fascia, quella condizione può essere considerata abituale. Se un ribasso appare raro e breve, può avere un significato diverso per chi stava già valutando l'acquisto.",
-          "Il percorso aiuta anche a riconoscere aumenti temporanei seguiti da sconti vistosi. Senza contesto, la riduzione finale cattura tutta l'attenzione. Con uno storico, si può notare che il punto di arrivo non è molto diverso dal prezzo precedente. Non si tratta di sospettare ogni promozione, ma di leggere la sequenza completa invece dell'ultimo fotogramma.",
-        ],
-      },
-      {
-        heading: "Interpretare senza cercare certezze",
-        paragraphs: [
-          "Uno storico è utile quando viene letto con prudenza. Un minimo passato non è una promessa e potrebbe essere legato a una disponibilità limitata, a un evento particolare o a condizioni non ripetibili. Aspettare esclusivamente quel valore può trasformarsi in un'attesa lunga, soprattutto se il prodotto serve o se sta diventando meno disponibile.",
-          "È più ragionevole osservare fasce e frequenza. Un prezzo vicino ai livelli migliori e presente per un periodo sufficiente può offrire una base concreta per decidere. Al contrario, un valore molto distante dall'andamento abituale invita a capire perché. L'obiettivo non è indovinare il giorno perfetto, ma evitare scelte scollegate dalle informazioni disponibili.",
-        ],
-      },
-      {
-        heading: "Collegare lo storico al proprio bisogno",
-        paragraphs: [
-          "La stessa curva può suggerire decisioni diverse a persone diverse. Chi deve sostituire subito un dispositivo guasto attribuisce valore alla disponibilità immediata. Chi sta pianificando un acquisto non urgente può permettersi di osservare ancora. Lo storico diventa utile soltanto quando viene collegato a una scadenza personale e a una soglia sostenibile.",
+          "Parti dalla scheda Amazon e prendi nota di modello e configurazione. Per uno smartphone, per esempio, controlla memoria e colore. Per un paio di scarpe verifica taglia e colore. Una scheda può riunire più versioni con andamenti diversi, quindi accertati che i dati storici si riferiscano proprio all'articolo che compreresti.",
           [
-            "Prima di attendere, conviene stabilire quanto tempo si è disposti a concedere alla ricerca e quale miglioramento renderebbe davvero significativa l'attesa. Senza questi limiti, si rischia di rinviare continuamente per inseguire il minimo assoluto. Una buona informazione dovrebbe semplificare la decisione e aiutare a ",
+            "Una volta identificata la variante, confronta il prezzo attuale con i valori osservati nelle settimane precedenti. Puoi ",
+            { href: "/", text: "cercare il prodotto su AFFARIO" },
+            " e avviare l'analisi della variante scelta per ottenere un'indicazione basata sui dati disponibili. Prima di acquistare, verifica sulla scheda Amazon il prezzo finale e le condizioni dell'offerta.",
+          ],
+        ],
+      },
+      {
+        heading: "Perché i prezzi Amazon cambiano",
+        paragraphs: [
+          "Il prezzo che vedi può cambiare quando parte o termina una promozione, quando varia la disponibilità o quando cambia il venditore dell'offerta in evidenza. Anche la domanda e l'arrivo di un nuovo modello possono incidere. Se una cifra cala all'improvviso, controlla che stato del prodotto, contenuto della confezione e condizioni di consegna siano comparabili.",
+          "Un ribasso dopo un aumento temporaneo può riportare l'articolo vicino al prezzo abituale. Per questo vale la pena guardare cosa costava prima dell'aumento, soprattutto quando uno sconto vistoso è il motivo principale per cui stai considerando l'acquisto.",
+        ],
+      },
+      {
+        heading: "Come interpretare l'andamento dei prezzi",
+        paragraphs: [
+          "Se consulti uno storico dettagliato, osserva la fascia in cui il prezzo è rimasto più spesso e quanto sono durati i ribassi. Una cifra comparsa per poche ore può essere stata accessibile a pochi acquirenti. Se invece il prezzo è tornato più volte nella stessa fascia durante il periodo osservato, hai un riferimento più concreto per capire quanto sia insolita l'offerta di oggi.",
+          [
+            "Controlla anche il periodo coperto dallo storico. Per un articolo appena uscito o venduto in modo discontinuo potresti avere pochi dati. In quel caso dai più peso a budget, disponibilità e condizioni di vendita. La guida su ",
+            {
+              href: "/guide/come-capire-se-un-prezzo-online-e-davvero-conveniente",
+              text: "come capire se un prezzo online è conveniente",
+            },
+            " spiega quali controlli fare oltre al confronto dei prezzi.",
+          ],
+        ],
+      },
+      {
+        heading: "Prezzo minimo e prezzo medio degli ultimi 90 giorni",
+        paragraphs: [
+          "Il minimo è il prezzo più basso osservato nel periodo. La media riassume il livello dei prezzi osservati e offre un riferimento per valutare quanto la cifra di oggi si discosti dall'andamento recente. Leggili insieme. Un prezzo sotto la media può essere interessante anche quando dista ancora qualche euro dal minimo.",
+          "Esempio ipotetico. Un paio di cuffie costa 109 € e sulla scheda compare un prezzo barrato di 149 €. Negli ultimi 90 giorni la stessa variante ha avuto una media di 119 € e un minimo di 99 €. L'offerta è quindi 10 € sotto la media e 10 € sopra il minimo. Se ti servono questa settimana e 109 € rientrano nel tuo budget, l'acquisto può avere senso. Se puoi aspettare, puoi fissare una soglia di 105 € e ricontrollare più avanti, sapendo che quel prezzo potrebbe non essere raggiunto.",
+        ],
+      },
+      {
+        heading: "Come capire se conviene comprare adesso",
+        paragraphs: [
+          "Considera insieme il prezzo recente, il costo finale e la data entro cui ti serve il prodotto. Se trovi la variante giusta vicino al minimo osservato, a condizioni adatte e dentro il budget, hai una base concreta per decidere. Se il prezzo è sopra la media e l'acquisto può aspettare, stabilisci una cifra a cui compreresti e un giorno in cui rivalutare l'offerta.",
+          [
+            "Chiediti quanto dovrebbe scendere il prezzo perché valga la pena aspettare. Per sostituire un dispositivo guasto può contare di più averlo subito. Per un acquisto programmato, qualche settimana in più può essere accettabile. Puoi approfondire questo ragionamento nella guida per ",
             {
               href: "/guide/comprare-subito-o-aspettare",
               text: "decidere se comprare subito o aspettare",
             },
-            ", non trasformarsi in un controllo infinito.",
+            ".",
           ],
+        ],
+      },
+      {
+        heading: "Come utilizzare AFFARIO",
+        paragraphs: [
+          [
+            "Dalla ",
+            { href: "/", text: "homepage di AFFARIO" },
+            " cerca il modello, seleziona la variante esatta tra quelle rilevate e scegli «Analizza il prezzo». AFFARIO riassume i dati utili per decidere. Quando l'offerta in evidenza su Amazon (Buy Box) è disponibile, l'ultimo prezzo rilevato corrisponde al prezzo di quell'offerta. Se disponibili, il minimo e la media degli ultimi 90 giorni danno un riferimento per il confronto.",
+          ],
+          "Quando i dati sono sufficienti, il Consiglio AFFARIO ti aiuta a valutare se comprare o aspettare e l'Affario Score riassume in un punteggio quanto il prezzo è favorevole rispetto ai valori recenti. Se AFFARIO può stimare un prezzo obiettivo e l'ultimo prezzo rilevato è più alto, trovi anche il Prezzo giusto AFFARIO, un riferimento ricavato dallo storico, e il Risparmio potenziale, cioè la differenza tra i due importi. Questi indicatori si basano sui dati osservati e non garantiscono ribassi futuri. Prima dell'ordine, verifica su Amazon prezzo finale, disponibilità, venditore e consegna.",
+        ],
+      },
+      {
+        heading: "Domande frequenti",
+        paragraphs: [
+          "Il prezzo minimo degli ultimi 90 giorni tornerà? Potrebbe ricomparire, ma dipende dalle offerte future. Usalo come riferimento per valutare il prezzo che trovi oggi.",
+          "Posso usare lo storico di un altro colore? Meglio verificare quello della variante che vuoi acquistare. Colori e configurazioni possono avere venditori, disponibilità e prezzi diversi.",
+          "Un prezzo inferiore alla media è sempre conveniente? Dipende dal budget, dalle condizioni e da quanto ti serve il prodotto. Controlla anche il costo finale e quanto la cifra si avvicina ai prezzi migliori osservati.",
         ],
       },
     ],
     practicalTips: [
-      "Osserva la frequenza dei prezzi, non soltanto il minimo registrato.",
-      "Considera gli aumenti e i ribassi come parti della stessa sequenza.",
-      "Non trattare un livello passato come una promessa futura.",
-      "Definisci una scadenza personale oltre la quale preferisci decidere.",
-      "Confronta sempre lo storico della variante esatta che vuoi acquistare.",
+      "Verifica la variante esatta e confronta offerte con condizioni equivalenti.",
+      "Quando il prezzo scende, controlla quanto è durato il ribasso nelle occasioni precedenti.",
+      "Se puoi aspettare, scegli una soglia di spesa e una data per ricontrollare.",
     ],
     principle:
-      "Lo storico non predice il domani: rende più leggibile l'oggi e aiuta a scegliere con aspettative realistiche.",
+      "Usa i prezzi già osservati per valutare l'offerta di oggi alla luce del tuo budget e dei tuoi tempi.",
   },
   {
     slug: "sconti-percentuali-online-come-interpretarli",
